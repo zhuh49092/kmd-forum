@@ -86,36 +86,10 @@ function chance(p) {
     return Math.random() < p;
 }
 
-// 根据数量生成花素材列表：plant/A01.png, plant/A02.png ...
-function buildPlantImagesByCount(count) {
-    const safeCount = Math.max(1, Math.floor(Number(count) || 1));
-    const images = [];
-    for (let i = 1; i <= safeCount; i++) {
-        const n = String(i).padStart(2, '0');
-        images.push('plant/A' + n + '.png');
-    }
-    return images;
-}
-
-// 解析记录中的 flowername，支持 A01/A01.png/plant/A01.png；旧命名统一回退到 A01
-function resolvePlantImageIndex(rawFlowerName, plantImagesLength) {
-    if (!rawFlowerName || !plantImagesLength) return 0;
-    const normalized = String(rawFlowerName)
-        .trim()
-        .replace(/^plant\//i, '')
-        .replace(/\.png$/i, '')
-        .toUpperCase();
-    const match = normalized.match(/^A(\d+)$/);
-    if (!match) return 0;
-    const index = Number(match[1]) - 1;
-    if (!Number.isInteger(index) || index < 0 || index >= plantImagesLength) return 0;
-    return index;
-}
-
 function withPlantImageFallback($img, cfg) {
-    const fallback = (cfg.plantImages && cfg.plantImages[0]) ? cfg.plantImages[0] : 'plant/A01.png';
+    const fallback = (cfg.plantImages && cfg.plantImages[0]) ? cfg.plantImages[0] : '';
     $img.on('error', function() {
-        if (this.dataset.fallbackApplied === '1') return;
+        if (this.dataset.fallbackApplied === '1' || !fallback) return;
         this.dataset.fallbackApplied = '1';
         this.src = fallback;
     });
@@ -207,13 +181,30 @@ function createPlantFromRecord(record) {
     const id = record.id || record.rid || '';
     const pubdate = record.pubdate || record.pubDate || '';
     
-    const imageIndex = resolvePlantImageIndex(flowerName, cfg.plantImages.length);
+    let imageIndex = 0;
+    if (flowerName) {
+        const targetPath = 'plant/' + flowerName + '.png';
+        for (let i = 0; i < cfg.plantImages.length; i++) {
+            if (cfg.plantImages[i] === targetPath) {
+                imageIndex = i;
+                break;
+            }
+        }
+        if (imageIndex === 0 && cfg.plantImages[0] !== targetPath) {
+            for (let i = 0; i < cfg.plantImages.length; i++) {
+                if (cfg.plantImages[i].includes(flowerName)) {
+                    imageIndex = i;
+                    break;
+                }
+            }
+        }
+    }
     
     return {
         id: currentPlantId++,
         recordId: id,
         imageIndex: imageIndex,
-        image: cfg.plantImages[imageIndex] || cfg.plantImages[0],
+        image: cfg.plantImages[imageIndex],
         userImage: picture,
         userContent: content,
         userName: name,
@@ -1819,13 +1810,19 @@ function spawnMultipleBees() {
 function initGarden() {
     const cfg = window.GARDEN_CONFIG;
 
-    // 花素材列表只由 plantImageCount 生成（A01/A02/...）
-    // 注意：plant/bg.png 与 plant/icon.png 不属于花素材
-    cfg.plantImages = buildPlantImagesByCount(cfg.plantImageCount);
+    // 规范化植物图片路径：统一添加 plant/ 前缀和 .png 后缀
+    if (cfg.plantImages && cfg.plantImages.length > 0) {
+        cfg.plantImages = cfg.plantImages
+            .filter(function(img) { return img && img.trim(); })
+            .map(function(img) {
+                let name = img.replace(/^plant\//, '').replace(/\.png$/, '');
+                return 'plant/' + name + '.png';
+            });
+    }
 
     // 安全检查：如果没有植物图片，给出警告
     if (!cfg.plantImages || cfg.plantImages.length === 0) {
-        console.error('植物图片列表为空，请检查 index.html 中的 plantImageCount 配置');
+        console.error('植物图片列表为空，请检查 index.html 中的 plantImages 配置');
     }
 
     updateTimeOverlay();
