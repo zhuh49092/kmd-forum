@@ -1418,78 +1418,135 @@ function showAuthorForm(callback) {
     });
 }
 
-// 投稿表单弹窗
-function showSubmitForm(plant) {
-    console.log('showSubmitForm 收到的 plant 数据:', plant);
-    
-    const contentHtml = '<div class="space-y-4">' +
-        '<div class="text-center space-y-2 mb-2">' +
-        '<div class="bg-lime-100 text-gray-800 text-base font-medium py-2 px-3 rounded">その気持ち、どんなお話？</div>' +
-        '<div class="text-gray-800 text-sm leading-relaxed">ひとことでもOK。<br>（写真は自由にどうぞ）人の顔を映さないように</div>' +
-        '</div>' +
-        '<div>' +
-        '<label class="block text-sm font-medium text-gray-700 mb-2">写真</label>' +
-        '<div id="image-upload-area" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center transition-colors">' +
-        '<div id="image-placeholder" class="cursor-pointer hover:text-green-600 transition-colors">' +
-        '<i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>' +
-        '<p class="text-sm text-gray-500">写真をアップロード</p>' +
-        '<p class="text-xs text-gray-400 mt-1">クリックして選択</p>' +
-        '</div>' +
-        '<img id="image-preview" class="hidden max-w-full max-h-40 mx-auto rounded-lg">' +
-        '<input type="file" id="image-file" accept="image/*" class="hidden">' +
-        '</div>' +
-        '</div>' +
-        '<div>' +
-        '<label class="block text-sm font-medium text-gray-700 mb-2">話したいこと</label>' +
-        '<textarea id="submit-message" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200 resize-none" placeholder="今日の天気がいいね……" rows="3"></textarea>' +
-        '</div>' +
-        '</div>';
-
-    $('#modal-title span').text('花を植える');
-    $('#modal-content .modal-body').html(contentHtml + '<div class="mt-4 flex justify-center"><button id="submit-btn" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-green-700">植える</button></div>');
-
-    // 图片上传逻辑
+// 投稿表单弹窗（写真優先 / 文字は副次モード）
+function showSubmitForm(plant, mode) {
     let selectedImage = null;
+    const initialMode = mode || 'photo';
 
-    $('#image-placeholder').off('click').on('click', function(e) {
-        e.stopPropagation();
-        $('#image-file').click();
-    });
+    function bindImageUpload() {
+        $('#image-placeholder, #image-upload-area').off('click').on('click', function(e) {
+            if ($(e.target).is('#image-preview')) return;
+            e.stopPropagation();
+            $('#image-file').click();
+        });
 
-    $('#image-preview').off('click').on('click', function(e) {
-        e.stopPropagation();
-        $('#image-file').click();
-    });
+        $('#image-preview').off('click').on('click', function(e) {
+            e.stopPropagation();
+            $('#image-file').click();
+        });
 
-    $('#image-file').off('change').on('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (!file.type.match('image.*')) {
-            showBubbleMessage('画像ファイルを選択してください', 'warning');
-            return;
+        $('#image-file').off('change').on('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!file.type.match('image.*')) {
+                showBubbleMessage('画像ファイルを選択してください', 'warning');
+                return;
+            }
+            selectedImage = file;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                $('#image-preview').attr('src', ev.target.result).removeClass('hidden');
+                $('#image-placeholder').hide();
+                $('#image-upload-area').addClass('has-preview');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        if (selectedImage) {
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                $('#image-preview').attr('src', ev.target.result).removeClass('hidden');
+                $('#image-placeholder').hide();
+                $('#image-upload-area').addClass('has-preview');
+            };
+            reader.readAsDataURL(selectedImage);
         }
-        selectedImage = file;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            $('#image-preview').attr('src', e.target.result).removeClass('hidden');
-            $('#image-placeholder').hide();
-        };
-        reader.readAsDataURL(file);
-    });
+    }
 
-    // 提交逻辑
-    $('#submit-btn').off('click').on('click', async function() {
-        const message = $('#submit-message').val().trim();
-        if (!selectedImage && !message) {
-            showBubbleMessage('写真、もしくはメッセージを残してね', 'warning');
-            return;
-        }
-        $('#submit-btn').prop('disabled', true);
-        await submitData(selectedImage, message, plant);
-    });
+    function bindSubmitButton(onSubmit) {
+        $('#submit-btn').off('click').on('click', async function() {
+            $('#submit-btn').prop('disabled', true);
+            try {
+                await onSubmit();
+            } catch (err) {
+                $('#submit-btn').prop('disabled', false);
+            }
+        });
+    }
 
-    $('#modal-overlay').css({ 'display': 'flex', 'z-index': '9000' });
-    $('#modal-content').css('opacity', '1').css('transform', 'scale(1)');
+    function showModalShell() {
+        $('#modal-title span').text('花を植える');
+        $('#modal-overlay').css({ 'display': 'flex', 'z-index': '9000' });
+        $('#modal-content').css('opacity', '1').css('transform', 'scale(1)');
+    }
+
+    function renderPhotoMode() {
+        const contentHtml =
+            '<div class="submit-form submit-mode-photo">' +
+                '<p class="submit-photo-prompt">言葉はいらない。<br>イベントで見つけた1枚、<br>花の肥料になる。</p>' +
+                '<label class="submit-photo-label">写真\u3000（人物の顔が写らないもの）</label>' +
+                '<div id="image-upload-area" class="submit-photo-action">' +
+                    '<div id="image-placeholder" class="submit-photo-placeholder">' +
+                        '<i class="fas fa-cloud-upload-alt"></i>' +
+                        '<span class="submit-photo-action-text">クリックで選択／撮る</span>' +
+                    '</div>' +
+                    '<img id="image-preview" class="submit-photo-preview hidden" alt="preview">' +
+                    '<input type="file" id="image-file" accept="image/*" class="hidden">' +
+                '</div>' +
+                '<div class="submit-actions">' +
+                    '<button type="button" id="submit-btn" class="submit-primary-btn">植える</button>' +
+                    '<button type="button" id="switch-to-text" class="submit-mode-switch">写真がない？文字でもいいぞ。</button>' +
+                '</div>' +
+            '</div>';
+
+        $('#modal-content .modal-body').html(contentHtml);
+        bindImageUpload();
+        bindSubmitButton(async function() {
+            if (!selectedImage) {
+                showBubbleMessage('写真を選んでから植えてね', 'warning');
+                $('#submit-btn').prop('disabled', false);
+                return;
+            }
+            await submitData(selectedImage, '', plant);
+        });
+        $('#switch-to-text').off('click').on('click', function() {
+            renderTextMode();
+        });
+        showModalShell();
+    }
+
+    function renderTextMode() {
+        const contentHtml =
+            '<div class="submit-form submit-mode-text">' +
+                '<label class="submit-text-label" for="submit-message">話したいこと</label>' +
+                '<textarea id="submit-message" class="submit-textarea" placeholder="今日の天気がいいね……" rows="5"></textarea>' +
+                '<div class="submit-actions">' +
+                    '<button type="button" id="submit-btn" class="submit-primary-btn">植える</button>' +
+                    '<button type="button" id="switch-to-photo" class="submit-mode-switch">写真で投稿する</button>' +
+                '</div>' +
+            '</div>';
+
+        $('#modal-content .modal-body').html(contentHtml);
+        bindSubmitButton(async function() {
+            const message = $('#submit-message').val().trim();
+            if (!message) {
+                showBubbleMessage('メッセージを書いてから植えてね', 'warning');
+                $('#submit-btn').prop('disabled', false);
+                return;
+            }
+            await submitData(null, message, plant);
+        });
+        $('#switch-to-photo').off('click').on('click', function() {
+            renderPhotoMode();
+        });
+        showModalShell();
+    }
+
+    if (initialMode === 'text') {
+        renderTextMode();
+    } else {
+        renderPhotoMode();
+    }
 }
 
 // 提交投稿数据
