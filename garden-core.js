@@ -1424,15 +1424,13 @@ function showSubmitForm(plant, mode) {
     const initialMode = mode || 'photo';
 
     function bindImageUpload() {
-        $('#image-placeholder, #image-upload-area').off('click').on('click', function(e) {
-            if ($(e.target).is('#image-preview')) return;
+        $('#image-file').off('click').on('click', function(e) {
             e.stopPropagation();
-            $('#image-file').click();
         });
 
-        $('#image-preview').off('click').on('click', function(e) {
+        $('#image-upload-area').off('click').on('click', function(e) {
             e.stopPropagation();
-            $('#image-file').click();
+            $('#image-file')[0].click();
         });
 
         $('#image-file').off('change').on('change', function(e) {
