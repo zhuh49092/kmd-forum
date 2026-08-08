@@ -769,7 +769,7 @@ function showPlantingOverlay() {
         'line-height': '1.4',
         'text-align': 'center',
         'text-shadow': '0 2px 10px rgba(0, 0, 0, 0.35)'
-    }).text('気持ちに合う花を選んでね');
+    }).text('どんな花を植えたい？');
 
     // 底部提示文字
     const $hint = $('<div class="plant-overlay-hint"></div>');
@@ -1520,7 +1520,7 @@ function showSubmitForm(plant, mode) {
                 '<textarea id="submit-message" class="submit-textarea" placeholder="今日の天気がいいね……" rows="5"></textarea>' +
                 '<div class="submit-actions">' +
                     '<button type="button" id="submit-btn" class="submit-primary-btn">植える</button>' +
-                    '<button type="button" id="switch-to-photo" class="submit-mode-switch">写真で投稿する</button>' +
+                    '<button type="button" id="switch-to-photo" class="submit-mode-switch">写真に戻る</button>' +
                 '</div>' +
             '</div>';
 
