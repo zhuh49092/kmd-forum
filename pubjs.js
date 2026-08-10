@@ -222,12 +222,52 @@ async function getKeyState(keyId) {
 }
 window.getKeyState = getKeyState;
 
-// 更新 key 的 last_visit（静默 POST，不显示 loading）
-async function updateKeyState(keyId, lastVisit) {
+// 按 rid 读取服务器端 PubDate（GET，可读响应）
+async function getRecordPubDate(rid) {
+    try {
+        const normalizedRid = String(rid || '').trim();
+        if (!normalizedRid) {
+            return { success: false, message: 'rid is required', data: null };
+        }
+        const url = new URL(SCRIPT_URL);
+        url.searchParams.append('action', 'getrecordpubdate');
+        url.searchParams.append('rid', normalizedRid);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
+    } catch (error) {
+        return { success: false, message: error.message, data: null };
+    }
+}
+window.getRecordPubDate = getRecordPubDate;
+
+// save 为 no-cors 后，通过短重试等待 GAS 写入完成
+async function getRecordPubDateWithRetry(rid, options) {
+    const maxAttempts = (options && options.maxAttempts) || 5;
+    const delayMs = (options && options.delayMs) || 400;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const result = await getRecordPubDate(rid);
+        if (result.success && result.data && result.data.pubdate) {
+            return result.data.pubdate;
+        }
+        if (attempt < maxAttempts) {
+            await new Promise(function(resolve) {
+                setTimeout(resolve, delayMs);
+            });
+        }
+    }
+
+    return null;
+}
+window.getRecordPubDateWithRetry = getRecordPubDateWithRetry;
+
+// 更新 key 的 last_seen_post_time（静默 POST，不显示 loading）
+async function updateKeyState(keyId, lastSeenPostTime) {
     try {
         const normalizedKeyId = String(keyId || '').trim();
-        if (!normalizedKeyId || !lastVisit) {
-            return { success: false, message: 'key_id and last_visit are required' };
+        if (!normalizedKeyId || !lastSeenPostTime) {
+            return { success: false, message: 'key_id and last_seen_post_time are required' };
         }
         await fetch(SCRIPT_URL, {
             method: 'POST',
@@ -238,7 +278,8 @@ async function updateKeyState(keyId, lastVisit) {
                 action: 'updatekeystate',
                 record: {
                     key_id: normalizedKeyId,
-                    last_visit: lastVisit
+                    last_seen_post_time: lastSeenPostTime,
+                    last_visit: lastSeenPostTime
                 }
             })
         });

@@ -13,6 +13,8 @@ let localNewPlantIds = new Set();
 let activityHintShown = { active: false, visitors: false };
 let reaccessFeedbackCompleted = false;
 let reaccessUsedCustomViewport = false;
+const KEY_SEEN_POST_TIME_BASELINE = '1970-01-01T00:00:00.000Z';
+let cachedKeyLastSeenPostTime = null;
 let currentModalPlant = null;
 let gardenAuthor = '';
 
@@ -181,7 +183,7 @@ function createPlantFromRecord(record) {
     const likes = record.likes || 0;
     const comments = record.comments || 0;
     const id = record.id || record.rid || '';
-    const pubdate = record.pubdate || record.pubDate || '';
+    const pubdate = record.pubdate || record.pubDate || record.PubDate || '';
     
     let imageIndex = 0;
     if (flowerName) {
@@ -256,6 +258,10 @@ function mergeNewRecords(newRecords) {
     
     if (addedCount > 0) {
         showActivityMessage('庭に新しい花が ' + addedCount + ' 本咲きました！');
+        const keyId = getUrlKeyId();
+        if (keyId) {
+            persistKeySeenPostTime(keyId);
+        }
     }
 }
 
@@ -1222,15 +1228,81 @@ function showReaccessMessage() {
     }, 5000);
 }
 
-function getPlantsNewerThan(lastVisitIso) {
-    const since = new Date(lastVisitIso);
-    if (isNaN(since.getTime())) {
+function getStoredLastSeenPostTime(keyStateData) {
+    if (!keyStateData) {
+        return null;
+    }
+    return keyStateData.last_seen_post_time || keyStateData.last_visit || null;
+}
+
+function parseValidCreatedTime(value) {
+    if (!value) {
+        return null;
+    }
+    const parsed = new Date(value);
+    return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getMaxLoadedPlantCreatedTimeIso() {
+    let maxMs = -Infinity;
+    let maxIso = null;
+
+    plants.forEach(function(plant) {
+        const parsed = parseValidCreatedTime(plant.createdTime);
+        if (parsed && parsed.getTime() > maxMs) {
+            maxMs = parsed.getTime();
+            maxIso = parsed.toISOString();
+        }
+    });
+
+    return maxIso || KEY_SEEN_POST_TIME_BASELINE;
+}
+
+function computeMonotonicSeenPostTimeIso(explicitIso) {
+    const candidates = [getMaxLoadedPlantCreatedTimeIso()];
+    if (explicitIso) {
+        candidates.push(explicitIso);
+    }
+    if (cachedKeyLastSeenPostTime) {
+        candidates.push(cachedKeyLastSeenPostTime);
+    }
+
+    let maxMs = -Infinity;
+    let maxIso = KEY_SEEN_POST_TIME_BASELINE;
+    candidates.forEach(function(iso) {
+        const parsed = parseValidCreatedTime(iso);
+        if (parsed && parsed.getTime() > maxMs) {
+            maxMs = parsed.getTime();
+            maxIso = parsed.toISOString();
+        }
+    });
+
+    return maxIso;
+}
+
+async function persistKeySeenPostTime(keyId, explicitIso) {
+    if (!keyId || typeof window.updateKeyState !== 'function') {
+        return;
+    }
+
+    try {
+        const nextSeenPostTime = computeMonotonicSeenPostTimeIso(explicitIso);
+        cachedKeyLastSeenPostTime = nextSeenPostTime;
+        await window.updateKeyState(keyId, nextSeenPostTime);
+    } catch (error) {
+        console.warn('key seen post time update failed:', error);
+    }
+}
+
+function getPlantsNewerThan(lastSeenPostTimeIso) {
+    const since = parseValidCreatedTime(lastSeenPostTimeIso);
+    if (!since) {
         return [];
     }
 
     return plants.filter(function(plant) {
-        const created = new Date(plant.createdTime);
-        return !isNaN(created.getTime()) && created > since;
+        const created = parseValidCreatedTime(plant.createdTime);
+        return created && created.getTime() > since.getTime();
     });
 }
 
@@ -1297,18 +1369,6 @@ function playPlantReaccessSway(plant) {
     });
 }
 
-async function persistKeyVisitState(keyId) {
-    if (!keyId || typeof window.updateKeyState !== 'function') {
-        return;
-    }
-
-    try {
-        await window.updateKeyState(keyId, new Date().toISOString());
-    } catch (error) {
-        console.warn('key visit state update failed:', error);
-    }
-}
-
 async function handleKeyReaccessFeedback() {
     const keyId = getUrlKeyId();
     if (!keyId) {
@@ -1330,24 +1390,27 @@ async function handleKeyReaccessFeedback() {
         return;
     }
 
-    const lastVisit = keyStateResult.data ? keyStateResult.data.last_visit : null;
+    const lastSeenPostTime = getStoredLastSeenPostTime(keyStateResult.data);
+    if (lastSeenPostTime) {
+        cachedKeyLastSeenPostTime = lastSeenPostTime;
+    }
 
-    if (!lastVisit) {
-        await persistKeyVisitState(keyId);
+    if (!lastSeenPostTime) {
+        await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
         return;
     }
 
-    const newPlants = getPlantsNewerThan(lastVisit);
+    const newPlants = getPlantsNewerThan(lastSeenPostTime);
     if (newPlants.length === 0) {
-        await persistKeyVisitState(keyId);
+        await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
         return;
     }
 
     const targetPlant = pickNewestPlant(newPlants);
     if (!targetPlant) {
-        await persistKeyVisitState(keyId);
+        await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
         return;
     }
@@ -1356,7 +1419,7 @@ async function handleKeyReaccessFeedback() {
     reaccessUsedCustomViewport = true;
     await panViewportToPlantSmooth(targetPlant);
     playPlantReaccessSway(targetPlant);
-    await persistKeyVisitState(keyId);
+    await persistKeySeenPostTime(keyId);
     reaccessFeedbackCompleted = true;
 }
 
@@ -1773,6 +1836,24 @@ const submitDataObj = {
         
         // 记录已提交的本地花草ID，防止轮询时重复添加
         localNewPlantIds.add(submitDataObj.rid);
+
+        let serverPubDateIso = null;
+        if (typeof window.getRecordPubDateWithRetry === 'function') {
+            try {
+                serverPubDateIso = await window.getRecordPubDateWithRetry(submitDataObj.rid);
+            } catch (error) {
+                console.warn('getrecordpubdate retry failed:', error);
+            }
+        }
+        const parsedServerPubDate = parseValidCreatedTime(serverPubDateIso);
+        if (parsedServerPubDate) {
+            plant.createdTime = parsedServerPubDate.toISOString();
+        }
+
+        const urlKeyId = getUrlKeyId();
+        if (urlKeyId) {
+            await persistKeySeenPostTime(urlKeyId, plant.createdTime);
+        }
         
         // 检查是否是待种植的花草（蒙板模式）
         if (pendingPlant && pendingPlant.id === plant.id) {
