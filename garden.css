@@ -787,10 +787,11 @@ body {
 }
 
 @keyframes plantReaccessSway {
-    0%, 30%, 100% { transform: rotate(0deg); }
-    7% { transform: rotate(-3.5deg); }
-    14% { transform: rotate(0deg); }
-    21% { transform: rotate(3.5deg); }
+    0% { transform: rotate(0deg); }
+    11.25% { transform: rotate(-6deg); }
+    22.5% { transform: rotate(6deg); }
+    33.75% { transform: rotate(-6deg); }
+    45%, 100% { transform: rotate(0deg); }
 }
 
 @keyframes slideDown {
