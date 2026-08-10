@@ -3,6 +3,7 @@
 const SPREADSHEET_ID = '13zLYXa23vOVmhks0Uts6taeB1RIgKEC6no4v_QPMSdQ';
 const SHEET_NAME = 'sheet1';
 const SHEET_NAME2 = 'rlist';
+const SHEET_NAME_KEY_STATE = 'key_state';
 
 // 缓存 sheet 引用，避免重复调用 getActiveSpreadsheet()
 let cachedSheets = [];
@@ -22,7 +23,237 @@ const CACHE_KEYS = {
   COMMENT_HEADERS: 'comment_headers',
   VIEW_HEADERS: 'view_headers'
 };
+const KEY_STATE_CACHE_PREFIX = 'key_state_';
 const CACHE_TTL = 300; // 5分钟
+
+function getSheetByName(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    throw new Error('Sheet not found: ' + sheetName);
+  }
+  return sheet;
+}
+
+function getKeyStateCacheKey(keyId) {
+  return KEY_STATE_CACHE_PREFIX + String(keyId);
+}
+
+function invalidateKeyStateCache(keyId) {
+  try {
+    if (keyId) {
+      CacheService.getScriptCache().remove(getKeyStateCacheKey(keyId));
+    }
+  } catch (e) {}
+}
+
+function getKeyStateColumnIndexes(headers) {
+  let keyIdIndex = -1;
+  let lastVisitIndex = -1;
+
+  for (let i = 0; i < headers.length; i++) {
+    const normalized = String(headers[i]).toLowerCase().replace(/\s+/g, '_');
+    if (normalized === 'key_id') {
+      keyIdIndex = i;
+    }
+    if (normalized === 'last_visit') {
+      lastVisitIndex = i;
+    }
+  }
+
+  return { keyIdIndex: keyIdIndex, lastVisitIndex: lastVisitIndex };
+}
+
+function normalizeKeyId(keyId) {
+  return String(keyId || '').trim();
+}
+
+function parseLastVisitValue(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    throw new Error('last_visit is required');
+  }
+
+  const parsed = rawValue instanceof Date ? rawValue : new Date(rawValue);
+  if (isNaN(parsed.getTime())) {
+    throw new Error('last_visit is invalid');
+  }
+
+  return parsed;
+}
+
+function formatLastVisitValue(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toISOString();
+}
+
+function findKeyStateRows(values, keyIdIndex, targetKeyId) {
+  const matchingRows = [];
+
+  for (let i = 1; i < values.length; i++) {
+    const rowKeyId = normalizeKeyId(values[i][keyIdIndex]);
+    if (rowKeyId && rowKeyId === targetKeyId) {
+      matchingRows.push(i + 1);
+    }
+  }
+
+  return matchingRows;
+}
+
+/**
+ * 读取 key_state 中某个 key 的 last_visit
+ * @param {string} keyId
+ * @return {Object}
+ */
+function getKeyState(keyId) {
+  try {
+    const normalizedKeyId = normalizeKeyId(keyId);
+    if (!normalizedKeyId) {
+      return {
+        success: false,
+        message: 'key_id is required'
+      };
+    }
+
+    const cacheKey = getKeyStateCacheKey(normalizedKeyId);
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const sheet = getSheetByName(SHEET_NAME_KEY_STATE);
+    const values = sheet.getDataRange().getValues();
+    if (!values || values.length <= 1) {
+      const result = { success: true, data: null };
+      setCachedData(cacheKey, result, CACHE_TTL);
+      return result;
+    }
+
+    const headers = values[0];
+    const columns = getKeyStateColumnIndexes(headers);
+    if (columns.keyIdIndex === -1 || columns.lastVisitIndex === -1) {
+      throw new Error('key_state sheet must contain key_id and last_visit columns');
+    }
+
+    let matchedRow = null;
+    let matchedLastVisit = null;
+
+    for (let i = 1; i < values.length; i++) {
+      const rowKeyId = normalizeKeyId(values[i][columns.keyIdIndex]);
+      if (rowKeyId !== normalizedKeyId) {
+        continue;
+      }
+
+      const rowLastVisit = values[i][columns.lastVisitIndex];
+      if (matchedRow === null) {
+        matchedRow = i + 1;
+        matchedLastVisit = rowLastVisit;
+        continue;
+      }
+
+      const currentTime = rowLastVisit instanceof Date ? rowLastVisit.getTime() : new Date(rowLastVisit).getTime();
+      const matchedTime = matchedLastVisit instanceof Date ? matchedLastVisit.getTime() : new Date(matchedLastVisit).getTime();
+      if (!isNaN(currentTime) && (isNaN(matchedTime) || currentTime >= matchedTime)) {
+        matchedRow = i + 1;
+        matchedLastVisit = rowLastVisit;
+      }
+    }
+
+    if (matchedRow === null) {
+      const result = { success: true, data: null };
+      setCachedData(cacheKey, result, CACHE_TTL);
+      return result;
+    }
+
+    const result = {
+      success: true,
+      data: {
+        key_id: normalizedKeyId,
+        last_visit: formatLastVisitValue(matchedLastVisit)
+      }
+    };
+    setCachedData(cacheKey, result, CACHE_TTL);
+    return result;
+  } catch (error) {
+    return {
+      success: false,
+      message: 'getkeystate fail: ' + error.toString(),
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * 更新 key_state 中某个 key 的 last_visit（不存在则新建）
+ * @param {Object} record { key_id, last_visit }
+ * @return {Object}
+ */
+function updateKeyState(record) {
+  try {
+    const normalizedKeyId = normalizeKeyId(record && record.key_id);
+    if (!normalizedKeyId) {
+      return {
+        success: false,
+        message: 'key_id is required'
+      };
+    }
+
+    const lastVisit = parseLastVisitValue(record.last_visit);
+    const sheet = getSheetByName(SHEET_NAME_KEY_STATE);
+    const values = sheet.getDataRange().getValues();
+
+    if (!values || values.length === 0) {
+      throw new Error('key_state sheet is missing header row');
+    }
+
+    const headers = values[0];
+    const columns = getKeyStateColumnIndexes(headers);
+    if (columns.keyIdIndex === -1 || columns.lastVisitIndex === -1) {
+      throw new Error('key_state sheet must contain key_id and last_visit columns');
+    }
+
+    const matchingRows = findKeyStateRows(values, columns.keyIdIndex, normalizedKeyId);
+
+    if (matchingRows.length === 0) {
+      const rowValues = [];
+      rowValues[columns.keyIdIndex] = normalizedKeyId;
+      rowValues[columns.lastVisitIndex] = lastVisit;
+
+      const normalizedRow = headers.map(function(_, index) {
+        return rowValues[index] !== undefined ? rowValues[index] : '';
+      });
+      sheet.appendRow(normalizedRow);
+    } else {
+      sheet.getRange(matchingRows[0], columns.lastVisitIndex + 1).setValue(lastVisit);
+
+      for (let i = matchingRows.length - 1; i >= 1; i--) {
+        sheet.deleteRow(matchingRows[i]);
+      }
+    }
+
+    invalidateKeyStateCache(normalizedKeyId);
+
+    return {
+      success: true,
+      message: 'key state updated',
+      data: {
+        key_id: normalizedKeyId,
+        last_visit: lastVisit.toISOString()
+      }
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'updatekeystate fail: ' + error.toString(),
+      error: error.toString()
+    };
+  }
+}
 
 function getCachedData(key) {
   const cache = CacheService.getScriptCache();
@@ -127,6 +358,10 @@ function doGet(e) {
         const activityResult = getActivityStats();
         output.setContent(JSON.stringify(activityResult));
         break;
+      case 'getkeystate':
+        const keyStateResult = getKeyState(e.parameter.key_id);
+        output.setContent(JSON.stringify(keyStateResult));
+        break;
         
       default:
         const defaultResult = getAllRecords();
@@ -189,6 +424,10 @@ function doPost(e) {
       case 'visit':  //页面访问
         const visitResult=saveView('','visit',record.entry_type,'',record.name)
         output.setContent(JSON.stringify(visitResult));             
+        break;
+      case 'updatekeystate':
+        const keyStateUpdateResult = updateKeyState(record);
+        output.setContent(JSON.stringify(keyStateUpdateResult));
         break;
       default:
         output.setContent(JSON.stringify({
