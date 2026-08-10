@@ -213,6 +213,7 @@ function createPlantFromRecord(record) {
         userImage: picture,
         userContent: content,
         userName: name,
+        keyId: String(record.key_id ?? record.keyId ?? '').trim(),
         x: x !== undefined ? x : rand(200, cfg.worldSize.width - 200),
         y: y !== undefined ? y : rand(200, cfg.worldSize.height - 200),
         likes: likes,
@@ -887,9 +888,8 @@ function renderPlant(plant, showArrows) {
         $plant.append($likesBadge);
     }
 
-    // 当前作者自己的花草保持呼吸动画，方便用户识别
-    const author = getGardenAuthor();
-    if (author && plant.userName === author) {
+    // 当前作者自己的花草保持呼吸动画（按 key_id 识别，不用昵称）
+    if (isOwnPlantForCurrentKey(plant)) {
         $plant.addClass('plant-new');
     }
 
@@ -1198,6 +1198,21 @@ function getUrlKeyId() {
         return String(getEntryContext().keyId || '').trim();
     }
     return String(new URLSearchParams(window.location.search).get('key') || '').trim();
+}
+
+function isOwnPlantForCurrentKey(plant) {
+    if (!plant) {
+        return false;
+    }
+
+    const urlKeyId = getUrlKeyId();
+    if (urlKeyId) {
+        const plantKeyId = String(plant.keyId ?? '').trim();
+        return plantKeyId !== '' && plantKeyId === urlKeyId;
+    }
+
+    const recordId = plant.recordId || '';
+    return recordId !== '' && localNewPlantIds.has(recordId);
 }
 
 function showReaccessMessage() {
@@ -1891,6 +1906,7 @@ const submitDataObj = {
         plant.userImage = pictureUrl;
         plant.userContent = message;
         plant.userName = gardenAuthor;
+        plant.keyId = getUrlKeyId();
         plant.isNew = false;
         plant.recordId = submitDataObj.rid;
         
@@ -1948,11 +1964,8 @@ const submitDataObj = {
             // 重新渲染整个植物元素以应用动画
             setTimeout(function() {
                 const $freshPlant = $('.plant[data-id="' + plant.id + '"]');
-                if ($freshPlant.length) {
-                    const author = getGardenAuthor();
-                    if (author && plant.userName === author) {
-                        $freshPlant.addClass('plant-new');
-                    }
+                if ($freshPlant.length && isOwnPlantForCurrentKey(plant)) {
+                    $freshPlant.addClass('plant-new');
                 }
             }, 100);
         }
