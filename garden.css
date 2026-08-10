@@ -787,15 +787,12 @@ body {
 
 .plant > img.plant-reaccess-sway {
     transform-origin: center bottom;
-    animation: plantReaccessSway 4s ease-in-out infinite;
+    animation: plantReaccessSway 1.9s ease-in-out infinite;
 }
 
 @keyframes plantReaccessSway {
-    0% { transform: rotate(0deg); }
-    11.25% { transform: rotate(-6deg); }
-    22.5% { transform: rotate(6deg); }
-    33.75% { transform: rotate(-6deg); }
-    45%, 100% { transform: rotate(0deg); }
+    0%, 100% { transform: rotate(-6deg); }
+    50% { transform: rotate(6deg); }
 }
 
 @keyframes slideDown {
