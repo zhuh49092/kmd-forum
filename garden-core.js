@@ -265,7 +265,7 @@ function mergeNewRecords(newRecords) {
         startNewFlowerSwayForPlants(newlyAddedPlants);
         const keyId = getUrlKeyId();
         if (keyId) {
-            persistKeySeenPostTime(keyId);
+            persistEventSeenPostTimeFromPlants(keyId, newlyAddedPlants);
         }
     }
 }
@@ -1268,18 +1268,14 @@ function getMaxLoadedPlantCreatedTimeIso() {
     return maxIso || KEY_SEEN_POST_TIME_BASELINE;
 }
 
-function computeMonotonicSeenPostTimeIso(explicitIso) {
-    const candidates = [getMaxLoadedPlantCreatedTimeIso()];
-    if (explicitIso) {
-        candidates.push(explicitIso);
-    }
-    if (cachedKeyLastSeenPostTime) {
-        candidates.push(cachedKeyLastSeenPostTime);
-    }
-
+function maxValidCreatedTimeIso(candidateIsos) {
     let maxMs = -Infinity;
-    let maxIso = KEY_SEEN_POST_TIME_BASELINE;
-    candidates.forEach(function(iso) {
+    let maxIso = null;
+
+    candidateIsos.forEach(function(iso) {
+        if (!iso) {
+            return;
+        }
         const parsed = parseValidCreatedTime(iso);
         if (parsed && parsed.getTime() > maxMs) {
             maxMs = parsed.getTime();
@@ -1290,18 +1286,49 @@ function computeMonotonicSeenPostTimeIso(explicitIso) {
     return maxIso;
 }
 
-async function persistKeySeenPostTime(keyId, explicitIso) {
-    if (!keyId || typeof window.updateKeyState !== 'function') {
+function getMaxPlantListCreatedTimeIso(plantList) {
+    if (!plantList || plantList.length === 0) {
+        return null;
+    }
+
+    return maxValidCreatedTimeIso(plantList.map(function(plant) {
+        return plant.createdTime;
+    }));
+}
+
+async function writeMonotonicKeySeenPostTime(keyId, eventIso) {
+    if (!keyId || !eventIso || typeof window.updateKeyState !== 'function') {
+        return;
+    }
+
+    const candidates = [eventIso];
+    if (cachedKeyLastSeenPostTime) {
+        candidates.push(cachedKeyLastSeenPostTime);
+    }
+
+    const nextSeenPostTime = maxValidCreatedTimeIso(candidates);
+    if (!nextSeenPostTime) {
         return;
     }
 
     try {
-        const nextSeenPostTime = computeMonotonicSeenPostTimeIso(explicitIso);
         cachedKeyLastSeenPostTime = nextSeenPostTime;
         await window.updateKeyState(keyId, nextSeenPostTime);
     } catch (error) {
         console.warn('key seen post time update failed:', error);
     }
+}
+
+async function persistFirstVisitKeyBaseline(keyId) {
+    await writeMonotonicKeySeenPostTime(keyId, getMaxLoadedPlantCreatedTimeIso());
+}
+
+async function persistEventSeenPostTimeFromPlants(keyId, plantList) {
+    const eventIso = getMaxPlantListCreatedTimeIso(plantList);
+    if (!eventIso) {
+        return;
+    }
+    await writeMonotonicKeySeenPostTime(keyId, eventIso);
 }
 
 function getPlantsNewerThan(lastSeenPostTimeIso) {
@@ -1463,28 +1490,26 @@ async function handleKeyReaccessFeedback() {
     }
 
     if (!lastSeenPostTime) {
-        await persistKeySeenPostTime(keyId);
+        await persistFirstVisitKeyBaseline(keyId);
         reaccessFeedbackCompleted = true;
         return null;
     }
 
     const newPlants = getPlantsNewerThan(lastSeenPostTime);
     if (newPlants.length === 0) {
-        await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
         return null;
     }
 
     const targetPlant = pickNewestPlant(newPlants);
     if (!targetPlant) {
-        await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
         return null;
     }
 
     reaccessUsedCustomViewport = true;
     panViewportToPlant(targetPlant);
-    await persistKeySeenPostTime(keyId);
+    await persistEventSeenPostTimeFromPlants(keyId, newPlants);
     reaccessFeedbackCompleted = true;
     return newPlants;
 }
@@ -1923,8 +1948,8 @@ const submitDataObj = {
         }
 
         const urlKeyId = getUrlKeyId();
-        if (urlKeyId) {
-            await persistKeySeenPostTime(urlKeyId, plant.createdTime);
+        if (urlKeyId && plant.createdTime) {
+            await writeMonotonicKeySeenPostTime(urlKeyId, plant.createdTime);
         }
         
         // 检查是否是待种植的花草（蒙板模式）
