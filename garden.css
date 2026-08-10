@@ -781,6 +781,10 @@ body {
     animation: plantBreathe 1.5s ease-in-out infinite;
 }
 
+.plant-new.plant-reaccess-active {
+    animation: none;
+}
+
 .plant > img.plant-reaccess-sway {
     transform-origin: center bottom;
     animation: plantReaccessSway 4s ease-in-out infinite;

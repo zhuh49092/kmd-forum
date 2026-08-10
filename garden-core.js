@@ -1394,6 +1394,13 @@ function getPlantFlowerImg(plant) {
     return $('.plant[data-id="' + plant.id + '"] > img').first();
 }
 
+function getPlantElement(plant) {
+    if (!plant || plant.id === undefined) {
+        return $();
+    }
+    return $('.plant[data-id="' + plant.id + '"]').first();
+}
+
 function startReaccessSwayForPlants(plantList) {
     if (!plantList || plantList.length === 0) {
         return;
@@ -1404,6 +1411,7 @@ function startReaccessSwayForPlants(plantList) {
             return;
         }
         reaccessSwayPlantIds.add(plant.id);
+        getPlantElement(plant).addClass('plant-reaccess-active');
         getPlantFlowerImg(plant).addClass('plant-reaccess-sway');
     });
 }
@@ -1413,6 +1421,7 @@ function stopReaccessSwayForPlant(plant) {
         return;
     }
     reaccessSwayPlantIds.delete(plant.id);
+    getPlantElement(plant).removeClass('plant-reaccess-active');
     getPlantFlowerImg(plant).removeClass('plant-reaccess-sway');
 }
 
