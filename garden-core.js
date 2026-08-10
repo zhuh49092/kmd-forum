@@ -13,6 +13,7 @@ let localNewPlantIds = new Set();
 let activityHintShown = { active: false, visitors: false };
 let reaccessFeedbackCompleted = false;
 let reaccessUsedCustomViewport = false;
+const reaccessSwayPlantIds = new Set();
 const KEY_SEEN_POST_TIME_BASELINE = '1970-01-01T00:00:00.000Z';
 let cachedKeyLastSeenPostTime = null;
 let currentModalPlant = null;
@@ -1357,16 +1358,33 @@ function panViewportToPlantSmooth(plant) {
     });
 }
 
-function playPlantReaccessSway(plant) {
-    if (!plant) return;
+function getPlantFlowerImg(plant) {
+    if (!plant || plant.id === undefined) {
+        return $();
+    }
+    return $('.plant[data-id="' + plant.id + '"] > img').first();
+}
 
-    const $flowerImg = $('.plant[data-id="' + plant.id + '"] > img').first();
-    if (!$flowerImg.length) return;
+function startReaccessSwayForPlants(plantList) {
+    if (!plantList || plantList.length === 0) {
+        return;
+    }
 
-    $flowerImg.addClass('plant-reaccess-sway');
-    $flowerImg.one('animationend webkitAnimationEnd', function() {
-        $flowerImg.removeClass('plant-reaccess-sway');
+    plantList.forEach(function(plant) {
+        if (!plant || plant.id === undefined) {
+            return;
+        }
+        reaccessSwayPlantIds.add(plant.id);
+        getPlantFlowerImg(plant).addClass('plant-reaccess-sway');
     });
+}
+
+function stopReaccessSwayForPlant(plant) {
+    if (!plant || plant.id === undefined) {
+        return;
+    }
+    reaccessSwayPlantIds.delete(plant.id);
+    getPlantFlowerImg(plant).removeClass('plant-reaccess-sway');
 }
 
 async function handleKeyReaccessFeedback() {
@@ -1418,7 +1436,7 @@ async function handleKeyReaccessFeedback() {
     showReaccessMessage();
     reaccessUsedCustomViewport = true;
     await panViewportToPlantSmooth(targetPlant);
-    playPlantReaccessSway(targetPlant);
+    startReaccessSwayForPlants(newPlants);
     await persistKeySeenPostTime(keyId);
     reaccessFeedbackCompleted = true;
 }
@@ -1463,6 +1481,10 @@ function updateTransform() {
 
 function openModal(plant, mouseX, mouseY) {
     currentModalPlant = plant;
+
+    if (reaccessSwayPlantIds.has(plant.id)) {
+        stopReaccessSwayForPlant(plant);
+    }
     
     const isNewPlant = plant.isNew;
     const title = isNewPlant ? '新种植花草' : '花の記録';
