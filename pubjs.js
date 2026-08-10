@@ -203,6 +203,52 @@ async function getData(maction) {
     throw new Error(result.message || '获取数据失败');
 }
 
+// 读取 key 的再訪問状态（返回完整 result，含 data: null）
+async function getKeyState(keyId) {
+    try {
+        const normalizedKeyId = String(keyId || '').trim();
+        if (!normalizedKeyId) {
+            return { success: false, message: 'key_id is required', data: null };
+        }
+        const url = new URL(SCRIPT_URL);
+        url.searchParams.append('action', 'getkeystate');
+        url.searchParams.append('key_id', normalizedKeyId);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return await response.json();
+    } catch (error) {
+        return { success: false, message: error.message, data: null };
+    }
+}
+window.getKeyState = getKeyState;
+
+// 更新 key 的 last_visit（静默 POST，不显示 loading）
+async function updateKeyState(keyId, lastVisit) {
+    try {
+        const normalizedKeyId = String(keyId || '').trim();
+        if (!normalizedKeyId || !lastVisit) {
+            return { success: false, message: 'key_id and last_visit are required' };
+        }
+        await fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            cache: 'no-cache',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: 'updatekeystate',
+                record: {
+                    key_id: normalizedKeyId,
+                    last_visit: lastVisit
+                }
+            })
+        });
+        return { success: true };
+    } catch (error) {
+        return { success: false, message: error.message };
+    }
+}
+window.updateKeyState = updateKeyState;
+
 // 筛选数据
 function filterData(data, _id) {
     return $.makeArray(data).filter(item => item.pid === _id);

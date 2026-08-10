@@ -781,6 +781,20 @@ body {
     animation: plantBreathe 1.5s ease-in-out infinite;
 }
 
+.plant > img.plant-reaccess-sway {
+    transform-origin: center bottom;
+    animation: plantReaccessSway 1.3s ease-in-out 1;
+}
+
+@keyframes plantReaccessSway {
+    0% { transform: rotate(0deg); }
+    20% { transform: rotate(-4deg); }
+    40% { transform: rotate(4deg); }
+    60% { transform: rotate(-3deg); }
+    80% { transform: rotate(2deg); }
+    100% { transform: rotate(0deg); }
+}
+
 @keyframes slideDown {
     from { top: -80px; opacity: 0; }
     to { top: 20px; opacity: 1; }

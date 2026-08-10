@@ -11,6 +11,8 @@ let latestPubDate = '';
 let pollingInterval = null;
 let localNewPlantIds = new Set();
 let activityHintShown = { active: false, visitors: false };
+let reaccessFeedbackCompleted = false;
+let reaccessUsedCustomViewport = false;
 let currentModalPlant = null;
 let gardenAuthor = '';
 
@@ -1186,6 +1188,178 @@ function showActivityMessage(message) {
     }, getActivityDuration());
 }
 
+function getUrlKeyId() {
+    if (typeof getEntryContext === 'function') {
+        return String(getEntryContext().keyId || '').trim();
+    }
+    return String(new URLSearchParams(window.location.search).get('key') || '').trim();
+}
+
+function showReaccessMessage() {
+    const $msg = $('<div class="activity-message reaccess-message">🌱 新しい花が咲いています</div>');
+    $msg.css({
+        position: 'fixed',
+        top: '-80px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        padding: '12px 24px',
+        borderRadius: '25px',
+        fontSize: '15px',
+        fontWeight: 'bold',
+        color: 'white',
+        background: 'linear-gradient(135deg, #4ade80, #16a34a)',
+        zIndex: 10000,
+        boxShadow: '0 4px 15px rgba(22, 163, 74, 0.35)',
+        whiteSpace: 'nowrap',
+        maxWidth: '80vw',
+        textAlign: 'center'
+    });
+    $('body').append($msg);
+    $msg.css('animation', 'slideDown 0.5s ease forwards');
+    setTimeout(function() {
+        $msg.css('animation', 'slideUp 0.5s ease forwards');
+        setTimeout(function() { $msg.remove(); }, 500);
+    }, 5000);
+}
+
+function getPlantsNewerThan(lastVisitIso) {
+    const since = new Date(lastVisitIso);
+    if (isNaN(since.getTime())) {
+        return [];
+    }
+
+    return plants.filter(function(plant) {
+        const created = new Date(plant.createdTime);
+        return !isNaN(created.getTime()) && created > since;
+    });
+}
+
+function pickNewestPlant(plantList) {
+    if (!plantList || plantList.length === 0) {
+        return null;
+    }
+
+    return plantList.reduce(function(newest, plant) {
+        const newestTime = new Date(newest.createdTime).getTime();
+        const plantTime = new Date(plant.createdTime).getTime();
+        if (isNaN(newestTime) || (!isNaN(plantTime) && plantTime > newestTime)) {
+            return plant;
+        }
+        return newest;
+    });
+}
+
+function panViewportToPlant(plant) {
+    if (!plant) return;
+
+    const cfg = window.GARDEN_CONFIG;
+    const containerWidth = window.innerWidth;
+    const containerHeight = window.innerHeight;
+    const worldScaledWidth = cfg.worldSize.width * scale;
+    const worldScaledHeight = cfg.worldSize.height * scale;
+    const minTranslateX = containerWidth - worldScaledWidth;
+    const minTranslateY = containerHeight - worldScaledHeight;
+
+    translateX = containerWidth / 2 - plant.x * scale;
+    translateY = containerHeight / 2 - plant.y * scale;
+    translateX = Math.max(minTranslateX, Math.min(0, translateX));
+    translateY = Math.max(minTranslateY, Math.min(0, translateY));
+    updateTransform();
+}
+
+function panViewportToPlantSmooth(plant) {
+    return new Promise(function(resolve) {
+        if (!plant) {
+            resolve();
+            return;
+        }
+
+        const $world = $('#garden-world');
+        $world.css('transition', 'transform 0.85s ease-out');
+        panViewportToPlant(plant);
+
+        setTimeout(function() {
+            $world.css('transition', '');
+            resolve();
+        }, 900);
+    });
+}
+
+function playPlantReaccessSway(plant) {
+    if (!plant) return;
+
+    const $flowerImg = $('.plant[data-id="' + plant.id + '"] > img').first();
+    if (!$flowerImg.length) return;
+
+    $flowerImg.addClass('plant-reaccess-sway');
+    $flowerImg.one('animationend webkitAnimationEnd', function() {
+        $flowerImg.removeClass('plant-reaccess-sway');
+    });
+}
+
+async function persistKeyVisitState(keyId) {
+    if (!keyId || typeof window.updateKeyState !== 'function') {
+        return;
+    }
+
+    try {
+        await window.updateKeyState(keyId, new Date().toISOString());
+    } catch (error) {
+        console.warn('key visit state update failed:', error);
+    }
+}
+
+async function handleKeyReaccessFeedback() {
+    const keyId = getUrlKeyId();
+    if (!keyId) {
+        reaccessFeedbackCompleted = true;
+        return;
+    }
+
+    let keyStateResult = { success: false, data: null };
+    if (typeof window.getKeyState === 'function') {
+        try {
+            keyStateResult = await window.getKeyState(keyId);
+        } catch (error) {
+            console.warn('key state read failed:', error);
+        }
+    }
+
+    if (!keyStateResult.success) {
+        reaccessFeedbackCompleted = true;
+        return;
+    }
+
+    const lastVisit = keyStateResult.data ? keyStateResult.data.last_visit : null;
+
+    if (!lastVisit) {
+        await persistKeyVisitState(keyId);
+        reaccessFeedbackCompleted = true;
+        return;
+    }
+
+    const newPlants = getPlantsNewerThan(lastVisit);
+    if (newPlants.length === 0) {
+        await persistKeyVisitState(keyId);
+        reaccessFeedbackCompleted = true;
+        return;
+    }
+
+    const targetPlant = pickNewestPlant(newPlants);
+    if (!targetPlant) {
+        await persistKeyVisitState(keyId);
+        reaccessFeedbackCompleted = true;
+        return;
+    }
+
+    showReaccessMessage();
+    reaccessUsedCustomViewport = true;
+    await panViewportToPlantSmooth(targetPlant);
+    playPlantReaccessSway(targetPlant);
+    await persistKeyVisitState(keyId);
+    reaccessFeedbackCompleted = true;
+}
+
 // 启动活跃度检查
 function startActivityCheck() {
     // 首次进入页面记录访问来源
@@ -2163,14 +2337,18 @@ function initGarden() {
     setupInitialViewport();
     
     // 执行加载
-    loadGardenData().then(function() {
+    loadGardenData().then(async function() {
+        await handleKeyReaccessFeedback();
+
         // 加载完成后启动轮询（每 10 秒检查新数据）
         if (latestPubDate) {
             startPolling();
         }
-        
-        // 数据加载完成后，重新定位到有花草的位置
-        repositionViewportToPlants();
+
+        // 再訪問反馈已定位时，跳过随机初始 reposition
+        if (!reaccessUsedCustomViewport) {
+            repositionViewportToPlants();
+        }
         
         // 视口移动完成后，隐藏 loading
         setTimeout(function() {
