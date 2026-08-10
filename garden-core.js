@@ -13,7 +13,7 @@ let localNewPlantIds = new Set();
 let activityHintShown = { active: false, visitors: false };
 let reaccessFeedbackCompleted = false;
 let reaccessUsedCustomViewport = false;
-const reaccessSwayPlantIds = new Set();
+const newFlowerSwayPlantIds = new Set();
 const KEY_SEEN_POST_TIME_BASELINE = '1970-01-01T00:00:00.000Z';
 let cachedKeyLastSeenPostTime = null;
 let currentModalPlant = null;
@@ -228,20 +228,21 @@ function createPlantFromRecord(record) {
 function mergeNewRecords(newRecords) {
     if (!newRecords || newRecords.length === 0) return;
     let addedCount = 0;
-    
+    const newlyAddedPlants = [];
+
     newRecords.forEach(function(record) {
         const recordId = record.id || record.rid;
-        
+
         if (localNewPlantIds.has(recordId)) {
             return;
         }
-        
+
         if (plantRecordIdMap.has(recordId)) {
             return;
         }
-        
+
         const plant = createPlantFromRecord(record);
-        
+
         const recordComments = commentCacheByRid.get(plant.recordId);
         if (recordComments && recordComments.length > 0) {
             recordComments.forEach(function(comment) {
@@ -252,14 +253,16 @@ function mergeNewRecords(newRecords) {
                 });
             });
         }
-        
+
         registerPlant(plant);
         renderPlant(plant);
         addedCount++;
+        newlyAddedPlants.push(plant);
     });
-    
+
     if (addedCount > 0) {
         showActivityMessage('庭に新しい花が ' + addedCount + ' 本咲きました！');
+        startNewFlowerSwayForPlants(newlyAddedPlants);
         const keyId = getUrlKeyId();
         if (keyId) {
             persistKeySeenPostTime(keyId);
@@ -1409,7 +1412,7 @@ function getPlantElement(plant) {
     return $('.plant[data-id="' + plant.id + '"]').first();
 }
 
-function startReaccessSwayForPlants(plantList) {
+function startNewFlowerSwayForPlants(plantList) {
     if (!plantList || plantList.length === 0) {
         return;
     }
@@ -1418,17 +1421,17 @@ function startReaccessSwayForPlants(plantList) {
         if (!plant || plant.id === undefined) {
             return;
         }
-        reaccessSwayPlantIds.add(plant.id);
+        newFlowerSwayPlantIds.add(plant.id);
         getPlantElement(plant).addClass('plant-reaccess-active');
         getPlantFlowerImg(plant).addClass('plant-reaccess-sway');
     });
 }
 
-function stopReaccessSwayForPlant(plant) {
+function stopNewFlowerSwayForPlant(plant) {
     if (!plant || plant.id === undefined) {
         return;
     }
-    reaccessSwayPlantIds.delete(plant.id);
+    newFlowerSwayPlantIds.delete(plant.id);
     getPlantElement(plant).removeClass('plant-reaccess-active');
     getPlantFlowerImg(plant).removeClass('plant-reaccess-sway');
 }
@@ -1527,8 +1530,8 @@ function updateTransform() {
 function openModal(plant, mouseX, mouseY) {
     currentModalPlant = plant;
 
-    if (reaccessSwayPlantIds.has(plant.id)) {
-        stopReaccessSwayForPlant(plant);
+    if (newFlowerSwayPlantIds.has(plant.id)) {
+        stopNewFlowerSwayForPlant(plant);
     }
     
     const isNewPlant = plant.isNew;
@@ -2498,7 +2501,7 @@ function initGarden() {
 
             if (reaccessNewPlants && reaccessNewPlants.length > 0) {
                 showReaccessMessage();
-                startReaccessSwayForPlants(reaccessNewPlants);
+                startNewFlowerSwayForPlants(reaccessNewPlants);
             }
         } catch (error) {
             console.error('庭の初期化に失敗しました:', error);
