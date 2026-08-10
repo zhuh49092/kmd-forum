@@ -1322,21 +1322,52 @@ function pickNewestPlant(plantList) {
     });
 }
 
-function panViewportToPlant(plant) {
-    if (!plant) return;
-
+function getViewportClampBounds() {
     const cfg = window.GARDEN_CONFIG;
     const containerWidth = window.innerWidth;
     const containerHeight = window.innerHeight;
     const worldScaledWidth = cfg.worldSize.width * scale;
     const worldScaledHeight = cfg.worldSize.height * scale;
-    const minTranslateX = containerWidth - worldScaledWidth;
-    const minTranslateY = containerHeight - worldScaledHeight;
 
-    translateX = containerWidth / 2 - plant.x * scale;
-    translateY = containerHeight / 2 - plant.y * scale;
-    translateX = Math.max(minTranslateX, Math.min(0, translateX));
-    translateY = Math.max(minTranslateY, Math.min(0, translateY));
+    return {
+        minTranslateX: containerWidth - worldScaledWidth,
+        minTranslateY: containerHeight - worldScaledHeight,
+        containerWidth: containerWidth,
+        containerHeight: containerHeight
+    };
+}
+
+function clampViewportTranslate(nextTranslateX, nextTranslateY, bounds) {
+    return {
+        translateX: Math.max(bounds.minTranslateX, Math.min(0, nextTranslateX)),
+        translateY: Math.max(bounds.minTranslateY, Math.min(0, nextTranslateY))
+    };
+}
+
+function computeViewportForPlant(plant, bounds) {
+    const nextTranslateX = bounds.containerWidth / 2 - plant.x * scale;
+    const nextTranslateY = bounds.containerHeight / 2 - plant.y * scale;
+    return clampViewportTranslate(nextTranslateX, nextTranslateY, bounds);
+}
+
+function isPlantComfortablyVisible(plant, nextTranslateX, nextTranslateY, bounds) {
+    const margin = 40;
+    const screenX = plant.x * scale + nextTranslateX;
+    const screenY = plant.y * scale + nextTranslateY;
+
+    return screenX >= margin &&
+        screenX <= bounds.containerWidth - margin &&
+        screenY >= margin &&
+        screenY <= bounds.containerHeight - margin;
+}
+
+function panViewportToPlant(plant) {
+    if (!plant) return;
+
+    const bounds = getViewportClampBounds();
+    const clamped = computeViewportForPlant(plant, bounds);
+    translateX = clamped.translateX;
+    translateY = clamped.translateY;
     updateTransform();
 }
 
@@ -1391,7 +1422,7 @@ async function handleKeyReaccessFeedback() {
     const keyId = getUrlKeyId();
     if (!keyId) {
         reaccessFeedbackCompleted = true;
-        return;
+        return null;
     }
 
     let keyStateResult = { success: false, data: null };
@@ -1405,7 +1436,7 @@ async function handleKeyReaccessFeedback() {
 
     if (!keyStateResult.success) {
         reaccessFeedbackCompleted = true;
-        return;
+        return null;
     }
 
     const lastSeenPostTime = getStoredLastSeenPostTime(keyStateResult.data);
@@ -1416,29 +1447,28 @@ async function handleKeyReaccessFeedback() {
     if (!lastSeenPostTime) {
         await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
-        return;
+        return null;
     }
 
     const newPlants = getPlantsNewerThan(lastSeenPostTime);
     if (newPlants.length === 0) {
         await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
-        return;
+        return null;
     }
 
     const targetPlant = pickNewestPlant(newPlants);
     if (!targetPlant) {
         await persistKeySeenPostTime(keyId);
         reaccessFeedbackCompleted = true;
-        return;
+        return null;
     }
 
-    showReaccessMessage();
     reaccessUsedCustomViewport = true;
-    await panViewportToPlantSmooth(targetPlant);
-    startReaccessSwayForPlants(newPlants);
+    panViewportToPlant(targetPlant);
     await persistKeySeenPostTime(keyId);
     reaccessFeedbackCompleted = true;
+    return newPlants;
 }
 
 // 启动活跃度检查
@@ -1808,6 +1838,7 @@ function showSubmitForm(plant, mode) {
 
 // 提交投稿数据
 async function submitData(imageFile, message, plant) {
+    $.showLoading();
     try {
         let pictureUrl = '';
         if (imageFile) {
@@ -1847,7 +1878,7 @@ const submitDataObj = {
         
         console.log('投稿数据:', submitDataObj);
 
-        await postData('save', submitDataObj);
+        await postData('save', submitDataObj, { keepLoading: true });
         
         // 更新植物状态
         plant.userImage = pictureUrl;
@@ -1879,10 +1910,9 @@ const submitDataObj = {
         
         // 检查是否是待种植的花草（蒙板模式）
         if (pendingPlant && pendingPlant.id === plant.id) {
-            // 关闭弹窗
             closeModal();
-            // 完成种植，渲染到花园
             finalizePlant();
+            showBubbleMessage('花を植えました！', 'success');
             return;
         }
         
@@ -1921,12 +1951,12 @@ const submitDataObj = {
         }
         
         showBubbleMessage('花を植えました！', 'success');
-        setTimeout(() => {
-            closeModal();
-        }, getSubmitCloseDelay());
+        closeModal();
     } catch (error) {
         showBubbleMessage('植えるのに失敗しました：' + error.message, 'warning');
         $('#submit-btn').prop('disabled', false);
+    } finally {
+        $.hideLoading();
     }
 }
 
@@ -2436,30 +2466,36 @@ function initGarden() {
         }
     }
     
-    // 初始化视口并显示草地
     setupInitialViewport();
-    
-    // 执行加载
-    loadGardenData().then(async function() {
-        await handleKeyReaccessFeedback();
 
-        // 加载完成后启动轮询（每 10 秒检查新数据）
-        if (latestPubDate) {
-            startPolling();
-        }
+    (async function initializeGardenView() {
+        try {
+            await loadGardenData();
 
-        // 再訪問反馈已定位时，跳过随机初始 reposition
-        if (!reaccessUsedCustomViewport) {
-            repositionViewportToPlants();
-        }
-        
-        // 视口移动完成后，隐藏 loading
-        setTimeout(function() {
+            const reaccessNewPlants = await handleKeyReaccessFeedback();
+
+            if (latestPubDate) {
+                startPolling();
+            }
+
+            if (!reaccessUsedCustomViewport) {
+                repositionViewportToPlants();
+            }
+
+            revealGarden();
+
+            if (reaccessNewPlants && reaccessNewPlants.length > 0) {
+                showReaccessMessage();
+                startReaccessSwayForPlants(reaccessNewPlants);
+            }
+        } catch (error) {
+            console.error('庭の初期化に失敗しました:', error);
+            revealGarden();
+        } finally {
             $.hideLoading();
-            // 首次进入引导：三步点击式 onboarding（只做 UI，不影响业务逻辑）
             initOnboarding();
-        }, 500); // 给一点时间让用户看到移动效果
-    });
+        }
+    })();
 
     // 启动活跃度检查（记录 home 访问并定时检查）
     startActivityCheck();
@@ -2469,68 +2505,52 @@ function initGarden() {
     createFireflies();
 }
 
-// 设置初始视口位置（显示草地）
+// 设置初始视口（Garden 保持隐藏，由 revealGarden() 显示）
 function setupInitialViewport() {
     const cfg = window.GARDEN_CONFIG;
-    // 默认放大
     scale = getInitialScale();
-    
-    // 计算平移范围，确保花园在屏幕内
-    const worldWidth = cfg.worldSize.width;
-    const worldHeight = cfg.worldSize.height;
-    const containerWidth = window.innerWidth;
-    const containerHeight = window.innerHeight;
-    
-    // 计算缩放后的世界尺寸
-    const worldScaledWidth = worldWidth * scale;
-    const worldScaledHeight = worldHeight * scale;
-    
-    // 计算平移范围
-    const minTranslateX = containerWidth - worldScaledWidth;
-    const minTranslateY = containerHeight - worldScaledHeight;
-    
-    // 初始位置设为随机或中心
-    translateX = getConfig('interactionConfig.initialTranslateRandom', true) ? rand(minTranslateX, 0) : 0;
-    translateY = rand(minTranslateY, 0);
-    
+
+    const bounds = getViewportClampBounds();
+    translateX = getConfig('interactionConfig.initialTranslateRandom', true) ? rand(bounds.minTranslateX, 0) : 0;
+    translateY = rand(bounds.minTranslateY, 0);
+
     updateTransform();
-    
-    // 显示花园（草地）
-    $('#garden-world').css('visibility', 'visible');
-    
-    // 显示 loading，禁止用户操作
-    $.showLoading();
+    $.showLoading({ opaque: true });
 }
 
-// 重新定位视口到有花草的位置并显示花园
-function repositionViewportToPlants() {
-    if (plants.length > 0 && getConfig('interactionConfig.initialTranslateRandom', true)) {
-        const cfg = window.GARDEN_CONFIG;
-        const containerWidth = window.innerWidth;
-        const containerHeight = window.innerHeight;
-        
-        // 计算平移范围
-        const worldScaledWidth = cfg.worldSize.width * scale;
-        const worldScaledHeight = cfg.worldSize.height * scale;
-        const minTranslateX = containerWidth - worldScaledWidth;
-        const minTranslateY = containerHeight - worldScaledHeight;
-        
-        // 随机选择一株植物作为定位点
-        const randomPlant = plants[randInt(0, plants.length - 1)];
-        const plantX = randomPlant.x;
-        const plantY = randomPlant.y;
-        
-        // 将视口中心对准该植物的位置
-        translateX = containerWidth / 2 - plantX * scale;
-        translateY = containerHeight / 2 - plantY * scale;
-        
-        // 确保在有效范围内
-        translateX = Math.max(minTranslateX, Math.min(0, translateX));
-        translateY = Math.max(minTranslateY, Math.min(0, translateY));
-        
-        updateTransform();
-    }
-    
-    // 显示花园
+function revealGarden() {
     $('#garden-world').css('visibility', 'visible');
+}
+
+// 重新定位视口，保证至少一株花草在可见区域内
+function repositionViewportToPlants() {
+    if (plants.length === 0) {
+        return;
+    }
+
+    const cfg = window.GARDEN_CONFIG;
+    const bounds = getViewportClampBounds();
+    const worldCenterX = cfg.worldSize.width / 2;
+    const worldCenterY = cfg.worldSize.height / 2;
+
+    const candidates = plants.slice().sort(function(a, b) {
+        const distA = Math.pow(a.x - worldCenterX, 2) + Math.pow(a.y - worldCenterY, 2);
+        const distB = Math.pow(b.x - worldCenterX, 2) + Math.pow(b.y - worldCenterY, 2);
+        return distA - distB;
+    });
+
+    for (let i = 0; i < candidates.length; i++) {
+        const clamped = computeViewportForPlant(candidates[i], bounds);
+        if (isPlantComfortablyVisible(candidates[i], clamped.translateX, clamped.translateY, bounds)) {
+            translateX = clamped.translateX;
+            translateY = clamped.translateY;
+            updateTransform();
+            return;
+        }
+    }
+
+    const fallback = computeViewportForPlant(candidates[0], bounds);
+    translateX = fallback.translateX;
+    translateY = fallback.translateY;
+    updateTransform();
 }

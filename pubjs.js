@@ -67,13 +67,14 @@ $(function() {
                 'pointer-events': 'none'
             });
         } else {
+            const overlayOpacity = opts.opaque ? 1 : 0.5;
             overlay.css({
                 'position': 'fixed',
                 'top': '0',
                 'left': '0',
                 'width': '100%',
                 'height': '100%',
-                'background-color': 'rgba(0, 0, 0, 0.5)',
+                'background-color': 'rgba(0, 0, 0, ' + overlayOpacity + ')',
                 'display': 'flex',
                 'align-items': 'center',
                 'justify-content': 'center',
@@ -172,23 +173,37 @@ function compressImageToBase64(imageFile) {
     });
 }
 
-// 提交数据（返回 Promise）
-async function postData(maction, pdatas) {
+// 提交数据（返回 Promise；options.keepLoading 为 true 时不自动 hideLoading）
+async function postData(maction, pdatas, options) {
+    const opts = options || {};
+    const keepLoading = opts.keepLoading === true;
+
     return new Promise((resolve, reject) => {
-        if (maction === 'updatePosition') {
-            $.showLoading({
-                mode: 'toast',
-                text: '花の位置をセーブ中……'
-            });
-        } else {
-            $.showLoading();
+        if (!keepLoading) {
+            if (maction === 'updatePosition') {
+                $.showLoading({
+                    mode: 'toast',
+                    text: '花の位置をセーブ中……'
+                });
+            } else {
+                $.showLoading();
+            }
         }
         fetch(SCRIPT_URL, {
             method: 'POST', mode: 'no-cors', cache: 'no-cache',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: maction, record: pdatas })
-        }).then(() => { $.hideLoading(); resolve(pdatas); })
-          .catch((error) => { $.hideLoading(); reject(error); });
+        }).then(() => {
+            if (!keepLoading) {
+                $.hideLoading();
+            }
+            resolve(pdatas);
+        }).catch((error) => {
+            if (!keepLoading) {
+                $.hideLoading();
+            }
+            reject(error);
+        });
     });
 }
 
