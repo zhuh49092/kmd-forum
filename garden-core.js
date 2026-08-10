@@ -888,8 +888,8 @@ function renderPlant(plant, showArrows) {
         $plant.append($likesBadge);
     }
 
-    // 当前作者自己的花草保持呼吸动画（按 key_id 识别，不用昵称）
-    if (isOwnPlantForCurrentKey(plant)) {
+    // 当前会话刚投稿的花草显示呼吸动画，便于用户找到并移动
+    if (isSessionFreshPlant(plant)) {
         $plant.addClass('plant-new');
     }
 
@@ -1200,17 +1200,10 @@ function getUrlKeyId() {
     return String(new URLSearchParams(window.location.search).get('key') || '').trim();
 }
 
-function isOwnPlantForCurrentKey(plant) {
+function isSessionFreshPlant(plant) {
     if (!plant) {
         return false;
     }
-
-    const urlKeyId = getUrlKeyId();
-    if (urlKeyId) {
-        const plantKeyId = String(plant.keyId ?? '').trim();
-        return plantKeyId !== '' && plantKeyId === urlKeyId;
-    }
-
     const recordId = plant.recordId || '';
     return recordId !== '' && localNewPlantIds.has(recordId);
 }
@@ -1960,11 +1953,10 @@ const submitDataObj = {
             
             // 禁用拖拽：移除植物的 mousedown/touchstart 事件
             $existingPlant.off('mousedown touchstart').css('cursor', 'pointer');
-            // 投稿后作者的花草继续保持呼吸动画
-            // 重新渲染整个植物元素以应用动画
+            // 当前会话刚投稿的花草显示呼吸动画
             setTimeout(function() {
                 const $freshPlant = $('.plant[data-id="' + plant.id + '"]');
-                if ($freshPlant.length && isOwnPlantForCurrentKey(plant)) {
+                if ($freshPlant.length && isSessionFreshPlant(plant)) {
                     $freshPlant.addClass('plant-new');
                 }
             }, 100);
