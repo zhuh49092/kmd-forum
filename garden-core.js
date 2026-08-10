@@ -261,7 +261,7 @@ function mergeNewRecords(newRecords) {
     });
 
     if (addedCount > 0) {
-        showActivityMessage('庭に新しい花が ' + addedCount + ' 本咲きました！');
+        showActivityMessage('新しい花が咲きました！');
         startNewFlowerSwayForPlants(newlyAddedPlants);
         const keyId = getUrlKeyId();
         if (keyId) {
@@ -1212,7 +1212,7 @@ function isSessionFreshPlant(plant) {
 }
 
 function showReaccessMessage() {
-    const $msg = $('<div class="activity-message reaccess-message">🌱 新しい花が咲いています</div>');
+    const $msg = $('<div class="activity-message reaccess-message">新しい花が咲きました！</div>');
     $msg.css({
         position: 'fixed',
         top: '-80px',
