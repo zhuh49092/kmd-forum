@@ -128,21 +128,29 @@ $(function() {
     };
 });
 
-// 上传图片到 GitHub（返回 Promise）
-async function uploadImageToGitHub(content, picdata, fileName) {
+// 上传图片到 GitHub（返回 Promise；options.keepLoading 为 true 时不操作全局 loading）
+async function uploadImageToGitHub(content, picdata, fileName, options) {
+    const opts = options || {};
+    const keepLoading = opts.keepLoading === true;
     const path = Date.now() + '_' + fileName;
     const url = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${path}`;
     try {
-        $.showLoading();
+        if (!keepLoading) {
+            $.showLoading();
+        }
         await $.ajax({
             url: url, method: 'PUT',
             headers: { 'Authorization': `token ghp_${GITHUB_CONFIG.token}`, 'Content-Type': 'application/json' },
             data: JSON.stringify({ message: '图片', content: picdata })
         });
-        $.hideLoading();
+        if (!keepLoading) {
+            $.hideLoading();
+        }
         return { success: true, picurl: `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/main/${path}` };
     } catch (error) {
-        $.hideLoading();
+        if (!keepLoading) {
+            $.hideLoading();
+        }
         return { success: false, message: error.responseJSON ? error.responseJSON.message : '未知错误' };
     }
 }
@@ -173,13 +181,13 @@ function compressImageToBase64(imageFile) {
     });
 }
 
-// 提交数据（返回 Promise；options.keepLoading 为 true 时不自动 hideLoading）
+// 提交数据（返回 Promise；options.keepLoading / options.silent 为 true 时不操作全局 loading）
 async function postData(maction, pdatas, options) {
     const opts = options || {};
-    const keepLoading = opts.keepLoading === true;
+    const skipLoadingUi = opts.keepLoading === true || opts.silent === true;
 
     return new Promise((resolve, reject) => {
-        if (!keepLoading) {
+        if (!skipLoadingUi) {
             if (maction === 'updatePosition') {
                 $.showLoading({
                     mode: 'toast',
@@ -194,12 +202,12 @@ async function postData(maction, pdatas, options) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: maction, record: pdatas })
         }).then(() => {
-            if (!keepLoading) {
+            if (!skipLoadingUi) {
                 $.hideLoading();
             }
             resolve(pdatas);
         }).catch((error) => {
-            if (!keepLoading) {
+            if (!skipLoadingUi) {
                 $.hideLoading();
             }
             reject(error);
@@ -365,7 +373,7 @@ async function ViewCard(_id, entryType){
             entry_type: urlEntryType,
             key_id: urlKeyId,
             name: window.getGardenAuthor ? window.getGardenAuthor() : ''
-        });
+        }, { silent: true });
         return { success: true };
     } catch (error) {
         return { success: false, message: error.message };

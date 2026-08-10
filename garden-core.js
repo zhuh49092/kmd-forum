@@ -836,8 +836,6 @@ function finalizePlant() {
     
     // 清除待种植状态
     pendingPlant = null;
-    
-    showBubbleMessage('投稿できました！花が咲きました🌸', 'success');
 }
 
 // 打开投稿弹窗
@@ -1843,7 +1841,7 @@ async function submitData(imageFile, message, plant) {
         let pictureUrl = '';
         if (imageFile) {
             const base64Data = await compressImageToBase64(imageFile);
-            const uploadResult = await uploadImageToGitHub(message, base64Data, imageFile.name);
+            const uploadResult = await uploadImageToGitHub(message, base64Data, imageFile.name, { keepLoading: true });
             if (!uploadResult.success) {
                 showBubbleMessage('アップロードに失敗しました: ' + uploadResult.message, 'warning');
                 $('#submit-btn').prop('disabled', false);
