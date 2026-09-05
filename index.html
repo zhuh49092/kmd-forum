@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=no">
@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="garden.css">
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="i18n.js"></script>
     <script src="pubjs.js?v=2"></script>
     <script>
         // 可配置的内容 - 以下设置可以根据需要修改
@@ -151,7 +152,7 @@
         </div>
     </div>
 
-    <button id="plant-btn" title="种植"></button>
+    <button id="plant-btn" title="花を植える"></button>
 
     <div id="zoom-controls">
         <button class="zoom-btn" id="zoom-in">+</button>
@@ -240,7 +241,7 @@
 
     <script>
         $(document).ready(function() {
-            initGarden();
+            bootstrapGarden();
         });
     </script>
 </body>

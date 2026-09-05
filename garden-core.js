@@ -247,7 +247,7 @@ function mergeNewRecords(newRecords) {
         if (recordComments && recordComments.length > 0) {
             recordComments.forEach(function(comment) {
                 plant.comments.push({
-                    user: comment.name || '匿名用户',
+                    user: comment.name || t('fallback.anonymousUser'),
                     text: comment.comment || '',
                     cdate: comment.Cdate || new Date().toISOString()
                 });
@@ -261,7 +261,7 @@ function mergeNewRecords(newRecords) {
     });
 
     if (addedCount > 0) {
-        showActivityMessage('新しい花が咲きました！');
+        showActivityMessage(t('toast.newFlower'));
         startNewFlowerSwayForPlants(newlyAddedPlants);
         const keyId = getUrlKeyId();
         if (keyId) {
@@ -285,7 +285,7 @@ function mergeNewComments(newComments) {
             
             if (!exists) {
                 plant.comments.push({
-                    user: comment.name || '匿名用户',
+                    user: comment.name || t('fallback.anonymousUser'),
                     text: comment.comment || '',
                     cdate: comment.Cdate || new Date().toISOString()
                 });
@@ -350,7 +350,7 @@ function startPolling() {
             if (activityResult && activityResult.success && activityResult.data) {
                 const { activeUsers, todayVisitors } = activityResult.data;
                 if (activeUsers > 0 && !activityHintShown.active) {
-                    showActivityMessage('今、庭で誰かが遊んでいます！');
+                    showActivityMessage(t('toast.someonePlaying'));
                     activityHintShown.active = true;
                     const timeout = getActivityTimeout();
                     if (timeout > 0) {
@@ -358,7 +358,7 @@ function startPolling() {
                     }
                 }
                 if (todayVisitors > getMinVisitors() && !activityHintShown.visitors) {
-                    showActivityMessage('今日はすでに ' + todayVisitors + ' 人が庭に来ています！');
+                    showActivityMessage(t('toast.visitors', { count: todayVisitors }));
                     activityHintShown.visitors = true;
                 }
             }
@@ -476,7 +476,7 @@ function createPlant() {
     const spot = findEmptySpot();
     
     if (!spot) {
-        showBubbleMessage('庭がいっぱいです！空いている場所を探してみてください。', 'warning');
+        showBubbleMessage(t('garden.full'), 'warning');
         return;
     }
     
@@ -599,13 +599,13 @@ function renderOnboardingStep() {
     $('#plant-btn').removeClass('onboarding-plant-btn-glow');
 
     if (onboardingStepIndex === 0) {
-        $onboardingTip.html('指で庭を探検しよう。<br>ピンチで拡大・縮小できます。');
+        $onboardingTip.html(t('onboarding.step1'));
         setTipPositionTopLeft();
     } else if (onboardingStepIndex === 1) {
-        $onboardingTip.html('花を押すと、<br>みんなのお話が見れます');
+        $onboardingTip.html(t('onboarding.step2'));
         setTipPositionTopLeft();
     } else if (onboardingStepIndex === 2) {
-        $onboardingTip.html('ボタンから花を植えます');
+        $onboardingTip.html(t('onboarding.step3'));
         setTipPositionNearPlantBtn();
         $('#plant-btn').addClass('onboarding-plant-btn-glow');
     } else {
@@ -645,7 +645,7 @@ function hideMovePlantHint() {
 
 function showMovePlantHint() {
     hideMovePlantHint();
-    $movePlantHint = $('<div class="move-plant-hint">花を押して好きな位置に移動しましょう</div>');
+    $movePlantHint = $('<div class="move-plant-hint"></div>').text(t('plant.moveHint'));
     $('body').append($movePlantHint);
 }
 
@@ -703,7 +703,7 @@ function showPlantingOverlay() {
     });
     
     // 中间花草（点击投稿）
-    $plantOverlayImg = $('<img src="' + pendingPlant.image + '" alt="plant-preview">');
+    $plantOverlayImg = $('<img src="' + pendingPlant.image + '" alt="' + t('alt.plantPreview') + '">');
     withPlantImageFallback($plantOverlayImg, cfg);
     $plantOverlayImg.css({
         'width': '200px',
@@ -782,7 +782,7 @@ function showPlantingOverlay() {
         'line-height': '1.4',
         'text-align': 'center',
         'text-shadow': '0 2px 10px rgba(0, 0, 0, 0.35)'
-    }).text('どんな花を植えたい？');
+    }).text(t('plant.whatFlower'));
 
     // 底部提示文字
     const $hint = $('<div class="plant-overlay-hint"></div>');
@@ -793,7 +793,7 @@ function showPlantingOverlay() {
         'font-weight': '600',
         'padding': '0 24px',
         'text-align': 'center'
-    }).text('タップで植える｜左右で花を選ぶ');
+    }).text(t('plant.tapToPlant'));
     
     $container.append($leftArrow, $plantOverlayImg, $rightArrow);
     $plantOverlay.append($closeBtn, $topPrompt, $container, $hint);
@@ -822,7 +822,7 @@ function cancelPlant() {
     // 清除待种植状态
     pendingPlant = null;
     
-    showBubbleMessage('植えるのをキャンセルしました。', 'info');
+    showBubbleMessage(t('garden.plantCancelled'), 'info');
 }
 
 // 完成种植（投稿完成后调用）
@@ -860,7 +860,7 @@ function renderPlant(plant, showArrows) {
     const $plant = $('<div class="plant" data-id="' + plant.id + '"></div>');
     $plant.css({ left: plant.x + 'px', top: plant.y + 'px' });
 
-    const $img = $('<img src="' + plant.image + '" alt="plant">');
+    const $img = $('<img src="' + plant.image + '" alt="' + t('alt.plant') + '">');
     withPlantImageFallback($img, cfg);
     
     // 只有已投稿的花草才显示用户内容
@@ -869,7 +869,7 @@ function renderPlant(plant, showArrows) {
         // 优先显示图片，只有没有图片时才显示文字
         if (plant.userImage && plant.userImage.trim() !== '' && plant.userImage.startsWith('http')) {
             // 显示图片
-            $userContent = $('<div class="plant-user-image"><img src="' + plant.userImage + '" alt="user"></div>');
+            $userContent = $('<div class="plant-user-image"><img src="' + plant.userImage + '" alt="' + t('alt.user') + '"></div>');
         } else if (plant.userContent && plant.userContent.trim() !== '') {
             // 显示文字内容
             $userContent = $('<div class="plant-user-text">' + plant.userContent + '</div>');
@@ -957,7 +957,7 @@ function makePlantDraggable($element, plant) {
                 const overlapping = checkOverlap(plant);
                 
                 if (overlapping) {
-                    showBubbleMessage('ここにはすでに花があります。空いている場所を探してください。', 'warning');
+                    showBubbleMessage(t('garden.overlap'), 'warning');
                     plant.x = originalX;
                     plant.y = originalY;
                     $element.css({ left: plant.x + 'px', top: plant.y + 'px' });
@@ -1212,7 +1212,7 @@ function isSessionFreshPlant(plant) {
 }
 
 function showReaccessMessage() {
-    const $msg = $('<div class="activity-message reaccess-message">新しい花が咲きました！</div>');
+    const $msg = $('<div class="activity-message reaccess-message"></div>').text(t('toast.newFlower'));
     $msg.css({
         position: 'fixed',
         top: '-80px',
@@ -1560,9 +1560,9 @@ function openModal(plant, mouseX, mouseY) {
     }
     
     const isNewPlant = plant.isNew;
-    const title = isNewPlant ? '新种植花草' : '花の記録';
-    const submitter = plant.userName || '匿名';
-    const submitDate = plant.createdTime ? new Date(plant.createdTime).toLocaleDateString('zh-CN') : '';
+    const title = isNewPlant ? t('modal.titleNewPlant') : t('modal.titleRecord');
+    const submitter = plant.userName || t('fallback.anonymous');
+    const submitDate = plant.createdTime ? new Date(plant.createdTime).toLocaleDateString(getDateLocale()) : '';
     
     // 设置标题
     $('#modal-title span').text(title);
@@ -1595,7 +1595,7 @@ function openModal(plant, mouseX, mouseY) {
         contentHtml += '<div class="space-y-2.5">';
         if (plant.userImage && plant.userImage.trim() !== '' && plant.userImage.startsWith('http')) {
             contentHtml += '<div class="flex justify-center">';
-            contentHtml += '<img src="' + plant.userImage + '" alt="画像" class="max-w-full max-h-80 rounded-lg shadow-sm object-contain">';
+            contentHtml += '<img src="' + plant.userImage + '" alt="' + t('modal.imageAlt') + '" class="max-w-full max-h-80 rounded-lg shadow-sm object-contain">';
             contentHtml += '</div>';
         }
         if (plant.userContent && plant.userContent.trim() !== '') {
@@ -1606,7 +1606,7 @@ function openModal(plant, mouseX, mouseY) {
         if (!plant.userImage && !plant.userContent) {
             contentHtml += '<div class="text-center py-10 text-gray-400">';
             contentHtml += '<i class="fas fa-image text-3xl mb-2"></i>';
-            contentHtml += '<p class="text-sm">まだ内容がありません</p>';
+            contentHtml += '<p class="text-sm">' + t('modal.noContent') + '</p>';
             contentHtml += '</div>';
         }
         contentHtml += '</div>';
@@ -1616,7 +1616,7 @@ function openModal(plant, mouseX, mouseY) {
         contentHtml += '<div class="flex justify-between items-center mb-2.5">';
         contentHtml += '<h4 class="text-xs font-medium text-gray-700 flex items-center">';
         contentHtml += '<i class="fas fa-comments mr-1.5 text-green-600"></i>';
-        contentHtml += 'コメント';
+        contentHtml += t('modal.comments');
         contentHtml += '<span class="ml-1 text-xs text-gray-400">(' + (plant.commentCount || 0) + ')</span>';
         contentHtml += '</h4>';
         contentHtml += '<div class="flex items-center cursor-pointer text-red-500 hover:text-red-600 transition-colors" id="like-btn">';
@@ -1629,14 +1629,14 @@ function openModal(plant, mouseX, mouseY) {
         if (plant.comments.length === 0) {
             contentHtml += '<div class="text-center py-6 text-gray-400 bg-gray-50 rounded-lg">';
             contentHtml += '<i class="far fa-comment-dots text-2xl mb-2"></i>';
-            contentHtml += '<p class="text-xs">まだコメントはありません。最初に書いてみよう！</p>';
+            contentHtml += '<p class="text-xs">' + t('modal.noComments') + '</p>';
             contentHtml += '</div>';
         } else {
             plant.comments.forEach(function(c, index) {
-                const commentDate = c.cdate ? new Date(c.cdate).toLocaleDateString('zh-CN') : '';
+                const commentDate = c.cdate ? new Date(c.cdate).toLocaleDateString(getDateLocale()) : '';
                 contentHtml += '<div class="bg-gray-50 rounded-lg p-2.5 hover:bg-green-50 transition-colors duration-200">';
                 contentHtml += '<div class="flex justify-between items-start mb-1">';
-                contentHtml += '<span class="font-medium text-green-600 text-xs">' + (c.user || '匿名') + '</span>';
+                contentHtml += '<span class="font-medium text-green-600 text-xs">' + (c.user || t('fallback.anonymous')) + '</span>';
                 if (commentDate) {
                     contentHtml += '<span class="text-xs text-gray-400">' + commentDate + '</span>';
                 }
@@ -1649,10 +1649,10 @@ function openModal(plant, mouseX, mouseY) {
         
         // 评论输入框
         contentHtml += '<div class="flex space-x-2">';
-        contentHtml += '<textarea id="comment-input" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200 transition-all duration-200 resize-none" placeholder="コメントを書いてみよう…" rows="2"></textarea>';
+        contentHtml += '<textarea id="comment-input" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200 transition-all duration-200 resize-none" placeholder="' + t('modal.commentPlaceholder') + '" rows="2"></textarea>';
         contentHtml += '<button id="submit-comment" class="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-medium hover:bg-green-700 transition-colors duration-200 shadow-sm flex items-center space-x-1">';
         contentHtml += '<i class="fas fa-comment"></i>';
-        contentHtml += '<span>送信</span>';
+        contentHtml += '<span>' + t('modal.send') + '</span>';
         contentHtml += '</button>';
         contentHtml += '</div>';
         contentHtml += '<div id="modal-result" class="mt-3 p-3 rounded-lg border hidden"></div>';
@@ -1663,8 +1663,8 @@ function openModal(plant, mouseX, mouseY) {
         contentHtml += '<div class="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">';
         contentHtml += '<i class="fas fa-seedling text-2xl text-green-600"></i>';
         contentHtml += '</div>';
-        contentHtml += '<p class="text-gray-600 text-sm mb-2">新しく植えた花です。まだ投稿がありません。</p>';
-        contentHtml += '<p class="text-gray-400 text-xs">閉じてからもう一度タップすると投稿できます。</p>';
+        contentHtml += '<p class="text-gray-600 text-sm mb-2">' + t('modal.newPlantBody1') + '</p>';
+        contentHtml += '<p class="text-gray-400 text-xs">' + t('modal.newPlantBody2') + '</p>';
         contentHtml += '</div>';
     }
     
@@ -1725,13 +1725,13 @@ function closeModal() {
 function showAuthorForm(callback) {
     const contentHtml = '<div class="space-y-4">' +
         '<div>' +
-        '<label class="block text-sm font-medium text-gray-700 mb-2">ニックネーム</label>' +
-        '<input id="author-input" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200" placeholder="はじめての投稿ですね。表示名を入力してください。">' +
+        '<label class="block text-sm font-medium text-gray-700 mb-2">' + t('author.label') + '</label>' +
+        '<input id="author-input" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-200" placeholder="' + t('author.placeholder') + '">' +
         '</div>' +
         '</div>';
 
-    $('#modal-title span').text('ニックネームを入力');
-    $('#modal-content .modal-body').html(contentHtml + '<div class="mt-4 flex justify-center"><button id="author-submit" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-green-700">確定</button></div>');
+    $('#modal-title span').text(t('author.title'));
+    $('#modal-content .modal-body').html(contentHtml + '<div class="mt-4 flex justify-center"><button id="author-submit" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-green-700">' + t('author.confirm') + '</button></div>');
 
     $('#modal-overlay').css({ 'display': 'flex', 'z-index': '9000' });
     $('#modal-content').css('opacity', '1').css('transform', 'scale(1)');
@@ -1739,7 +1739,7 @@ function showAuthorForm(callback) {
     $('#author-submit').off('click').on('click', function() {
         const name = $('#author-input').val().trim();
         if (!name) {
-            showBubbleMessage('表示名は必須です。', 'warning');
+            showBubbleMessage(t('author.required'), 'warning');
             return;
         }
         saveGardenAuthor(name);
@@ -1769,7 +1769,7 @@ function showSubmitForm(plant, mode) {
             const file = e.target.files[0];
             if (!file) return;
             if (!file.type.match('image.*')) {
-                showBubbleMessage('画像ファイルを選択してください', 'warning');
+                showBubbleMessage(t('error.invalidImageType'), 'warning');
                 return;
             }
             selectedImage = file;
@@ -1805,7 +1805,7 @@ function showSubmitForm(plant, mode) {
     }
 
     function showModalShell() {
-        $('#modal-title span').text('花を植える');
+        $('#modal-title span').text(t('submit.title'));
         $('#modal-overlay').css({ 'display': 'flex', 'z-index': '9000' });
         $('#modal-content').css('opacity', '1').css('transform', 'scale(1)');
     }
@@ -1813,19 +1813,19 @@ function showSubmitForm(plant, mode) {
     function renderPhotoMode() {
         const contentHtml =
             '<div class="submit-form submit-mode-photo">' +
-                '<p class="submit-photo-prompt">言葉はいらない。<br>イベントで見つけた1枚、<br>花の肥料になる。</p>' +
-                '<label class="submit-photo-label">写真\u3000（人物の顔が写らないもの）</label>' +
+                '<p class="submit-photo-prompt">' + t('submit.photoPrompt') + '</p>' +
+                '<label class="submit-photo-label">' + t('submit.photoLabel') + '</label>' +
                 '<div id="image-upload-area" class="submit-photo-action">' +
                     '<div id="image-placeholder" class="submit-photo-placeholder">' +
                         '<i class="fas fa-cloud-upload-alt"></i>' +
-                        '<span class="submit-photo-action-text">クリックで選択／撮る</span>' +
+                        '<span class="submit-photo-action-text">' + t('submit.clickToSelect') + '</span>' +
                     '</div>' +
-                    '<img id="image-preview" class="submit-photo-preview hidden" alt="preview">' +
+                    '<img id="image-preview" class="submit-photo-preview hidden" alt="' + t('alt.preview') + '">' +
                     '<input type="file" id="image-file" accept="image/*" class="hidden">' +
                 '</div>' +
                 '<div class="submit-actions">' +
-                    '<button type="button" id="submit-btn" class="submit-primary-btn">植える</button>' +
-                    '<button type="button" id="switch-to-text" class="submit-mode-switch">写真がない？文字でもいいぞ。</button>' +
+                    '<button type="button" id="submit-btn" class="submit-primary-btn">' + t('submit.plant') + '</button>' +
+                    '<button type="button" id="switch-to-text" class="submit-mode-switch">' + t('submit.noPhotoSwitch') + '</button>' +
                 '</div>' +
             '</div>';
 
@@ -1833,7 +1833,7 @@ function showSubmitForm(plant, mode) {
         bindImageUpload();
         bindSubmitButton(async function() {
             if (!selectedImage) {
-                showBubbleMessage('写真を選んでから植えてね', 'warning');
+                showBubbleMessage(t('error.photoRequired'), 'warning');
                 $('#submit-btn').prop('disabled', false);
                 return;
             }
@@ -1848,11 +1848,11 @@ function showSubmitForm(plant, mode) {
     function renderTextMode() {
         const contentHtml =
             '<div class="submit-form submit-mode-text">' +
-                '<label class="submit-text-label" for="submit-message">話したいこと</label>' +
-                '<textarea id="submit-message" class="submit-textarea" placeholder="今日の天気がいいね……" rows="5"></textarea>' +
+                '<label class="submit-text-label" for="submit-message">' + t('submit.textLabel') + '</label>' +
+                '<textarea id="submit-message" class="submit-textarea" placeholder="' + t('submit.textPlaceholder') + '" rows="5"></textarea>' +
                 '<div class="submit-actions">' +
-                    '<button type="button" id="submit-btn" class="submit-primary-btn">植える</button>' +
-                    '<button type="button" id="switch-to-photo" class="submit-mode-switch">写真に戻る</button>' +
+                    '<button type="button" id="submit-btn" class="submit-primary-btn">' + t('submit.plant') + '</button>' +
+                    '<button type="button" id="switch-to-photo" class="submit-mode-switch">' + t('submit.backToPhoto') + '</button>' +
                 '</div>' +
             '</div>';
 
@@ -1860,7 +1860,7 @@ function showSubmitForm(plant, mode) {
         bindSubmitButton(async function() {
             const message = $('#submit-message').val().trim();
             if (!message) {
-                showBubbleMessage('メッセージを書いてから植えてね', 'warning');
+                showBubbleMessage(t('error.messageRequired'), 'warning');
                 $('#submit-btn').prop('disabled', false);
                 return;
             }
@@ -1888,7 +1888,7 @@ async function submitData(imageFile, message, plant) {
             const base64Data = await compressImageToBase64(imageFile);
             const uploadResult = await uploadImageToGitHub(message, base64Data, imageFile.name, { keepLoading: true });
             if (!uploadResult.success) {
-                showBubbleMessage('アップロードに失敗しました: ' + uploadResult.message, 'warning');
+                showBubbleMessage(t('error.uploadFailed', { msg: uploadResult.message }), 'warning');
                 $('#submit-btn').prop('disabled', false);
                 return;
             }
@@ -1956,7 +1956,7 @@ const submitDataObj = {
         if (pendingPlant && pendingPlant.id === plant.id) {
             closeModal();
             finalizePlant();
-            showBubbleMessage('花を植えました！', 'success');
+            showBubbleMessage(t('success.planted'), 'success');
             return;
         }
         
@@ -1990,10 +1990,10 @@ const submitDataObj = {
             }, 100);
         }
         
-        showBubbleMessage('花を植えました！', 'success');
+        showBubbleMessage(t('success.planted'), 'success');
         closeModal();
     } catch (error) {
-        showBubbleMessage('植えるのに失敗しました：' + error.message, 'warning');
+        showBubbleMessage(t('error.plantFailed', { msg: error.message }), 'warning');
         $('#submit-btn').prop('disabled', false);
     } finally {
         $.hideLoading();
@@ -2016,7 +2016,7 @@ async function addComment() {
     const text = $('#comment-input').val().trim();
     if (!currentModalPlant) return;
     if (!text) {
-        showBubbleMessage('コメントを入力してください', 'warning');
+        showBubbleMessage(t('error.commentRequired'), 'warning');
         return;
     }
 
@@ -2034,7 +2034,7 @@ async function addComment() {
 async function doAddComment(text) {
     const result = await PostComment(currentModalPlant.recordId, text);
     if (!result.success) {
-        showBubbleMessage('コメントの送信に失敗しました：' + result.message, 'warning');
+        showBubbleMessage(t('error.commentFailed', { msg: result.message }), 'warning');
         return;
     }
 
@@ -2053,7 +2053,7 @@ async function doAddComment(text) {
         $plant.append($badge);
     }
     $badge.text(currentModalPlant.commentCount);
-    showBubbleMessage('コメントしました！', 'success');
+    showBubbleMessage(t('success.commented'), 'success');
     setTimeout(function() {
         openModal(currentModalPlant);
         $('#comment-input').val('');
@@ -2211,6 +2211,10 @@ function spawnMultipleBees() {
 
 function initGarden() {
     const cfg = window.GARDEN_CONFIG;
+
+    if (typeof initInSiteLanguageSwitch === 'function') {
+        initInSiteLanguageSwitch();
+    }
 
     // 规范化植物图片路径：统一添加 plant/ 前缀和 .png 后缀
     if (cfg.plantImages && cfg.plantImages.length > 0) {
@@ -2490,7 +2494,7 @@ function initGarden() {
                     if (recordComments && recordComments.length > 0) {
                         recordComments.forEach(function(comment) {
                             plant.comments.push({
-                                user: comment.name || '匿名用户',
+                                user: comment.name || t('fallback.anonymousUser'),
                                 text: comment.comment || '',
                                 cdate: comment.Cdate || new Date().toISOString()
                             });
@@ -2593,4 +2597,19 @@ function repositionViewportToPlants() {
     translateX = fallback.translateX;
     translateY = fallback.translateY;
     updateTransform();
+}
+
+if (typeof onLanguageChange === 'function') {
+    onLanguageChange(function() {
+        if (onboardingActive) {
+            renderOnboardingStep();
+        }
+        if ($movePlantHint) {
+            $movePlantHint.text(t('plant.moveHint'));
+        }
+        if ($plantOverlay && $plantOverlay.length) {
+            $plantOverlay.find('.plant-overlay-title').text(t('plant.whatFlower'));
+            $plantOverlay.find('.plant-overlay-hint').text(t('plant.tapToPlant'));
+        }
+    });
 }

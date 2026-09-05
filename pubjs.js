@@ -151,7 +151,7 @@ async function uploadImageToGitHub(content, picdata, fileName, options) {
         if (!keepLoading) {
             $.hideLoading();
         }
-        return { success: false, message: error.responseJSON ? error.responseJSON.message : '未知错误' };
+        return { success: false, message: error.responseJSON ? error.responseJSON.message : t('error.unknown') };
     }
 }
 
@@ -159,7 +159,7 @@ async function uploadImageToGitHub(content, picdata, fileName, options) {
 function compressImageToBase64(imageFile) {
     return new Promise((resolve, reject) => {
         const maxWidth = 1024, quality = 0.9;
-        if (!imageFile.type.match('image.*')) { reject(new Error('请选择图片文件')); return; }
+        if (!imageFile.type.match('image.*')) { reject(new Error(t('error.selectImageFile'))); return; }
         const reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
@@ -171,12 +171,12 @@ function compressImageToBase64(imageFile) {
                     canvas.width = width; canvas.height = height;
                     canvas.getContext('2d').drawImage(img, 0, 0, width, height);
                     resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
-                } catch (error) { reject(new Error('图片处理失败: ' + error.message)); }
+                } catch (error) { reject(new Error(t('error.imageProcess', { msg: error.message }))); }
             };
-            img.onerror = function() { reject(new Error('图片加载失败')); };
+            img.onerror = function() { reject(new Error(t('error.imageLoad'))); };
             img.src = e.target.result;
         };
-        reader.onerror = function() { reject(new Error('文件读取失败')); };
+        reader.onerror = function() { reject(new Error(t('error.fileRead'))); };
         reader.readAsDataURL(imageFile);
     });
 }
@@ -191,7 +191,7 @@ async function postData(maction, pdatas, options) {
             if (maction === 'updatePosition') {
                 $.showLoading({
                     mode: 'toast',
-                    text: '花の位置をセーブ中……'
+                    text: t('loading.savePosition')
                 });
             } else {
                 $.showLoading();
@@ -223,7 +223,7 @@ async function getData(maction) {
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const result = await response.json();
     if (result.success) return result.data;
-    throw new Error(result.message || '获取数据失败');
+    throw new Error(result.message || t('error.fetchData'));
 }
 
 // 读取 key 的再訪問状态（返回完整 result，含 data: null）
