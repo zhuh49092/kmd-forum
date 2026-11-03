@@ -15,7 +15,8 @@ let reaccessFeedbackCompleted = false;
 let reaccessUsedCustomViewport = false;
 const newFlowerSwayPlantIds = new Set();
 const KEY_SEEN_POST_TIME_BASELINE = '1970-01-01T00:00:00.000Z';
-let cachedKeyLastSeenPostTime = null;
+const KEY_SEEN_POST_TIME_STORAGE_PREFIX = 'garden_last_seen_post_time:';
+let pendingReaccessPlants = [];
 let currentModalPlant = null;
 let gardenAuthor = '';
 
@@ -226,7 +227,7 @@ function createPlantFromRecord(record) {
 
 // 合并新增记录到页面
 function mergeNewRecords(newRecords) {
-    if (!newRecords || newRecords.length === 0) return;
+    if (!newRecords || newRecords.length === 0) return [];
     let addedCount = 0;
     const newlyAddedPlants = [];
 
@@ -260,14 +261,7 @@ function mergeNewRecords(newRecords) {
         newlyAddedPlants.push(plant);
     });
 
-    if (addedCount > 0) {
-        showActivityMessage(t('toast.newFlower'));
-        startNewFlowerSwayForPlants(newlyAddedPlants);
-        const keyId = getUrlKeyId();
-        if (keyId) {
-            persistEventSeenPostTimeFromPlants(keyId, newlyAddedPlants);
-        }
-    }
+    return newlyAddedPlants;
 }
 
 // 合并新增评论到页面
@@ -326,7 +320,10 @@ function startPolling() {
             const activityResult = results[2];
             
             if (recordsResult && recordsResult.success && recordsResult.data && recordsResult.data.length > 0) {
-                mergeNewRecords(recordsResult.data);
+                const newlyAddedPlants = mergeNewRecords(recordsResult.data);
+                if (newlyAddedPlants.length > 0) {
+                    showOrQueueNewPlantFeedback(newlyAddedPlants);
+                }
                 const dates = recordsResult.data.map(function(r) {
                     return r.pubdate || r.PubDate;
                 });
@@ -1203,6 +1200,54 @@ function getUrlKeyId() {
     return String(new URLSearchParams(window.location.search).get('key') || '').trim();
 }
 
+function getLocalKeySeenPostTime(keyId) {
+    if (!keyId) return null;
+    try {
+        return localStorage.getItem(KEY_SEEN_POST_TIME_STORAGE_PREFIX + keyId);
+    } catch (error) {
+        console.warn('本地已看时间读取失败:', error);
+        return null;
+    }
+}
+
+function writeLocalKeySeenPostTime(keyId, eventIso) {
+    if (!keyId || !eventIso) return;
+    try {
+        const current = getLocalKeySeenPostTime(keyId);
+        const nextSeenPostTime = maxValidCreatedTimeIso([current, eventIso]);
+        if (nextSeenPostTime) {
+            localStorage.setItem(KEY_SEEN_POST_TIME_STORAGE_PREFIX + keyId, nextSeenPostTime);
+        }
+    } catch (error) {
+        console.warn('本地已看时间保存失败:', error);
+    }
+}
+
+function showOrQueueNewPlantFeedback(plantList) {
+    if (!plantList || plantList.length === 0) return;
+    if (document.visibilityState === 'hidden') {
+        const pendingIds = new Set(pendingReaccessPlants.map(function(plant) { return plant.id; }));
+        plantList.forEach(function(plant) {
+            if (!pendingIds.has(plant.id)) {
+                pendingReaccessPlants.push(plant);
+                pendingIds.add(plant.id);
+            }
+        });
+        return;
+    }
+
+    showReaccessMessage();
+    startNewFlowerSwayForPlants(plantList);
+    writeLocalKeySeenPostTime(getUrlKeyId(), getMaxPlantListCreatedTimeIso(plantList));
+}
+
+function showPendingNewPlantFeedback() {
+    if (document.visibilityState === 'hidden' || pendingReaccessPlants.length === 0) return;
+    const plantsToShow = pendingReaccessPlants;
+    pendingReaccessPlants = [];
+    showOrQueueNewPlantFeedback(plantsToShow);
+}
+
 function isSessionFreshPlant(plant) {
     if (!plant) {
         return false;
@@ -1236,13 +1281,6 @@ function showReaccessMessage() {
         $msg.css('animation', 'slideUp 0.5s ease forwards');
         setTimeout(function() { $msg.remove(); }, 500);
     }, 5000);
-}
-
-function getStoredLastSeenPostTime(keyStateData) {
-    if (!keyStateData) {
-        return null;
-    }
-    return keyStateData.last_seen_post_time || keyStateData.last_visit || null;
 }
 
 function parseValidCreatedTime(value) {
@@ -1296,41 +1334,6 @@ function getMaxPlantListCreatedTimeIso(plantList) {
     }));
 }
 
-async function writeMonotonicKeySeenPostTime(keyId, eventIso) {
-    if (!keyId || !eventIso || typeof window.updateKeyState !== 'function') {
-        return;
-    }
-
-    const candidates = [eventIso];
-    if (cachedKeyLastSeenPostTime) {
-        candidates.push(cachedKeyLastSeenPostTime);
-    }
-
-    const nextSeenPostTime = maxValidCreatedTimeIso(candidates);
-    if (!nextSeenPostTime) {
-        return;
-    }
-
-    try {
-        cachedKeyLastSeenPostTime = nextSeenPostTime;
-        await window.updateKeyState(keyId, nextSeenPostTime);
-    } catch (error) {
-        console.warn('key seen post time update failed:', error);
-    }
-}
-
-async function persistFirstVisitKeyBaseline(keyId) {
-    await writeMonotonicKeySeenPostTime(keyId, getMaxLoadedPlantCreatedTimeIso());
-}
-
-async function persistEventSeenPostTimeFromPlants(keyId, plantList) {
-    const eventIso = getMaxPlantListCreatedTimeIso(plantList);
-    if (!eventIso) {
-        return;
-    }
-    await writeMonotonicKeySeenPostTime(keyId, eventIso);
-}
-
 function getPlantsNewerThan(lastSeenPostTimeIso) {
     const since = parseValidCreatedTime(lastSeenPostTimeIso);
     if (!since) {
@@ -1340,6 +1343,18 @@ function getPlantsNewerThan(lastSeenPostTimeIso) {
     return plants.filter(function(plant) {
         const created = parseValidCreatedTime(plant.createdTime);
         return created && created.getTime() > since.getTime();
+    });
+}
+
+function getPlantsAtOrAfter(lastSeenPostTimeIso) {
+    const since = parseValidCreatedTime(lastSeenPostTimeIso);
+    if (!since) {
+        return [];
+    }
+
+    return plants.filter(function(plant) {
+        const created = parseValidCreatedTime(plant.createdTime);
+        return created && created.getTime() >= since.getTime();
     });
 }
 
@@ -1470,27 +1485,43 @@ async function handleKeyReaccessFeedback() {
         return null;
     }
 
-    let keyStateResult = { success: false, data: null };
-    if (typeof window.getKeyState === 'function') {
-        try {
-            keyStateResult = await window.getKeyState(keyId);
-        } catch (error) {
-            console.warn('key state read failed:', error);
-        }
-    }
-
-    if (!keyStateResult.success) {
-        reaccessFeedbackCompleted = true;
-        return null;
-    }
-
-    const lastSeenPostTime = getStoredLastSeenPostTime(keyStateResult.data);
-    if (lastSeenPostTime) {
-        cachedKeyLastSeenPostTime = lastSeenPostTime;
-    }
+    let lastSeenPostTime = getLocalKeySeenPostTime(keyId);
 
     if (!lastSeenPostTime) {
-        await persistFirstVisitKeyBaseline(keyId);
+        if (typeof window.getKeyState === 'function') {
+            try {
+                const keyStateResult = await window.getKeyState(keyId);
+                lastSeenPostTime = keyStateResult && keyStateResult.success && keyStateResult.data
+                    ? (keyStateResult.data.last_seen_post_time || keyStateResult.data.last_visit || null)
+                    : null;
+            } catch (error) {
+                console.warn('旧版已看时间迁移读取失败:', error);
+            }
+        }
+
+        if (lastSeenPostTime) {
+            const migrationPlants = getPlantsAtOrAfter(lastSeenPostTime);
+            if (migrationPlants.length > 0) {
+                const targetPlant = pickNewestPlant(migrationPlants);
+                reaccessUsedCustomViewport = true;
+                panViewportToPlant(targetPlant);
+                reaccessFeedbackCompleted = true;
+                return migrationPlants;
+            }
+            writeLocalKeySeenPostTime(keyId, lastSeenPostTime);
+            reaccessFeedbackCompleted = true;
+            return null;
+        }
+
+        const firstVisitPlant = pickNewestPlant(plants);
+        if (firstVisitPlant) {
+            reaccessUsedCustomViewport = true;
+            panViewportToPlant(firstVisitPlant);
+            reaccessFeedbackCompleted = true;
+            return [firstVisitPlant];
+        }
+
+        writeLocalKeySeenPostTime(keyId, getMaxLoadedPlantCreatedTimeIso());
         reaccessFeedbackCompleted = true;
         return null;
     }
@@ -1509,7 +1540,6 @@ async function handleKeyReaccessFeedback() {
 
     reaccessUsedCustomViewport = true;
     panViewportToPlant(targetPlant);
-    await persistEventSeenPostTimeFromPlants(keyId, newPlants);
     reaccessFeedbackCompleted = true;
     return newPlants;
 }
@@ -1947,11 +1977,6 @@ const submitDataObj = {
             plant.createdTime = parsedServerPubDate.toISOString();
         }
 
-        const urlKeyId = getUrlKeyId();
-        if (urlKeyId && plant.createdTime) {
-            await writeMonotonicKeySeenPostTime(urlKeyId, plant.createdTime);
-        }
-        
         // 检查是否是待种植的花草（蒙板模式）
         if (pendingPlant && pendingPlant.id === plant.id) {
             closeModal();
@@ -2529,8 +2554,7 @@ function initGarden() {
             revealGarden();
 
             if (reaccessNewPlants && reaccessNewPlants.length > 0) {
-                showReaccessMessage();
-                startNewFlowerSwayForPlants(reaccessNewPlants);
+                showOrQueueNewPlantFeedback(reaccessNewPlants);
             }
         } catch (error) {
             console.error('庭の初期化に失敗しました:', error);
@@ -2540,6 +2564,8 @@ function initGarden() {
             initOnboarding();
         }
     })();
+
+    document.addEventListener('visibilitychange', showPendingNewPlantFeedback);
 
     // 启动活跃度检查（记录 home 访问并定时检查）
     startActivityCheck();
