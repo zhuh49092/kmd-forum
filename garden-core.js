@@ -362,7 +362,7 @@ function startPolling() {
         } catch (error) {
             console.error('轮询新数据失败:', error);
         }
-    }, 10000);
+    }, 30000);
 }
 
 function stopPolling() {
